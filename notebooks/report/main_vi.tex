@@ -1,0 +1,628 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{hyperref}
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+\usepackage[vietnamese]{babel}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit, backgrounds}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+
+\title{Nhận Dạng Hành Động Người Bằng Khung Xương}
+
+\author{
+  \IEEEauthorblockN{Đỗ Nhật Minh}
+  \IEEEauthorblockA{Khoa Công nghệ Thông tin\\
+  Trường Đại học Khoa học Tự nhiên, ĐHQG-HCM}
+  \and
+  \IEEEauthorblockN{Lê Anh Duy}
+  \IEEEauthorblockA{Khoa Công nghệ Thông tin\\
+  Trường Đại học Khoa học Tự nhiên, ĐHQG-HCM}
+}
+
+\maketitle
+
+% Đánh số bảng bằng chữ số Ả Rập thay vì La Mã
+\renewcommand{\thetable}{\arabic{table}}
+
+\begin{abstract}
+Bài báo này trình bày một pipeline đầu cuối (end-to-end) cho bài toán nhận dạng
+hành động người, kết hợp YOLOv8-pose để trích xuất khung xương theo thời gian
+thực với Mạng Tích Chập Đồ Thị Không-Thời Gian (ST-GCN) để phân loại hành động.
+Hệ thống được đánh giá trên tập con 8 lớp bài tập thể dục của Penn Action Dataset
+(1.163 video). Đầu tiên, chúng tôi huấn luyện ST-GCN trên tọa độ khớp ground
+truth để thiết lập ngưỡng trên, đạt độ chính xác validation \textbf{98,28\%} và
+macro F1-score \textbf{0,9814}. Tiếp theo, chúng tôi thay thế keypoint ground truth
+bằng keypoint được ước lượng tự động từ YOLOv8n-pose, ánh xạ 17 khớp COCO sang
+13 khớp Penn Action và bổ sung một node trung tâm ảo tạo thành đồ thị 14 node.
+Trong pipeline hoàn toàn tự động này, độ chính xác giảm xuống \textbf{73,82\%}
+(macro F1 = 0,7239), cho thấy sự phụ thuộc chặt chẽ giữa chất lượng ước lượng
+tư thế và hiệu năng phân loại downstream. Phân tích theo từng lớp cho thấy các
+hành động có chuyển động đặc trưng mạnh như \textit{jumping\_jacks} và
+\textit{pullup} duy trì hiệu năng tốt (F1 $\geq$ 0,93), trong khi các bài tập
+thực hiện ở tư thế nằm như \textit{bench\_press} suy giảm đáng kể (F1 = 0,38).
+\end{abstract}
+
+\begin{IEEEkeywords}
+nhận dạng hành động, khung xương, ST-GCN, YOLOv8, ước lượng tư thế, Penn Action
+\end{IEEEkeywords}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Giới thiệu}
+\label{sec:intro}
+
+Nhận dạng hành động người (Human Action Recognition -- HAR) là một bài toán cơ bản
+trong thị giác máy tính với nhiều ứng dụng thực tiễn như giám sát an ninh, phân
+tích thể thao, hỗ trợ phục hồi chức năng và tương tác người-máy. Các phương pháp
+truyền thống dựa trên đặc trưng RGB thô nhạy cảm với sự thay đổi ngoại cảnh như
+ánh sáng, trang phục và nền. Các phương pháp dựa trên khung xương~\cite{yan2018stgcn}
+khắc phục hạn chế này bằng cách làm việc trên biểu diễn khớp cơ thể gọn nhẹ,
+bất biến với góc nhìn.
+
+Hai thách thức cản trở việc ứng dụng thực tế của HAR dựa trên khung xương là:
+(1)~thu thập chuỗi khung xương chính xác mà không cần cảm biến chuyên dụng đắt
+tiền hay nhân công gán nhãn; và (2)~xây dựng bộ phân loại bền vững trên sự biến
+đổi thời gian đa dạng của các hành động. Các tiến bộ gần đây trong ước lượng
+keypoint -- đặc biệt là họ YOLO -- cung cấp giải pháp thực tế cho thách thức đầu
+tiên nhờ ước lượng tư thế một giai đoạn, thời gian thực từ ảnh RGB đơn kênh.
+ST-GCN giải quyết thách thức thứ hai bằng cách mô hình hóa đồng thời cấu trúc
+không gian của cơ thể người và sự tiến hóa thời gian của quỹ đạo các khớp.
+
+Bài báo có các đóng góp sau:
+\begin{itemize}
+  \item Thiết kế pipeline HAR đầu cuối kết hợp YOLOv8-pose và ST-GCN, chỉ yêu
+        cầu camera RGB thông thường.
+  \item Thiết lập ngưỡng trên bằng cách huấn luyện ST-GCN trên keypoint ground
+        truth của Penn Action, đạt 98,28\% độ chính xác.
+  \item Định lượng khoảng cách hiệu năng khi dùng YOLO tự động (73,82\%) và phân
+        tích nguyên nhân suy giảm theo từng lớp hành động.
+  \item Cung cấp phân tích chất lượng keypoint YOLO theo từng khớp so với ground
+        truth để giải thích suy giảm hiệu năng.
+\end{itemize}
+
+\begin{figure*}[t]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  node distance=1.4cm,
+  iobox/.style={trapezium, trapezium left angle=80, trapezium right angle=100,
+                draw, thick, text width=2.0cm, align=center,
+                font=\normalsize\bfseries, minimum height=1.6cm, inner sep=5pt},
+  procbox/.style={rectangle, rounded corners=8pt, draw, thick,
+                  text width=2.2cm, align=center,
+                  font=\normalsize\bfseries, minimum height=1.6cm, inner sep=5pt},
+  ann/.style={font=\small, text=black!55, align=center, text width=2.4cm},
+  arr/.style={-Stealth, line width=2pt, color=black!45},
+  dim/.style={font=\small\ttfamily, fill=white, inner sep=2pt,
+              text=black!65, midway, above=2pt}
+]
+\node[iobox, fill=blue!18, draw=blue!55]
+  (vid) {Video\\đầu vào};
+\node[procbox, fill=orange!28, draw=orange!65, right=of vid]
+  (yolo) {YOLOv8\\-pose};
+\node[procbox, fill=teal!22, draw=teal!60, right=of yolo]
+  (remap) {Ánh xạ\\khớp\\$17{\to}14$};
+\node[procbox, fill=violet!18, draw=violet!55, right=of remap]
+  (align) {Căn chỉnh\\thời gian\\$T{\to}64$};
+\node[procbox, fill=red!18, draw=red!55, right=of align]
+  (stgcn) {ST-GCN\\6 blocks\\GAP+FCN};
+\node[iobox, fill=green!25, draw=green!55, right=of stgcn]
+  (out) {Lớp\\hành động};
+
+\draw[arr] (vid)   -- node[dim]{$(T,17,2)$}         (yolo);
+\draw[arr] (yolo)  -- node[dim]{$(T,13,2)$}         (remap);
+\draw[arr] (remap) -- node[dim]{$(T,14,2)$}         (align);
+\draw[arr] (align) -- node[dim]{$(64,14,2)$}        (stgcn);
+\draw[arr] (stgcn) -- node[dim]{$\mathrm{softmax}(8)$} (out);
+
+\node[ann, below=0.3cm of vid]   {RGB frames};
+\node[ann, below=0.3cm of yolo]  {17 COCO\\keypoints/frame};
+\node[ann, below=0.3cm of remap] {Bỏ mắt/tai\\+ virtual center};
+\node[ann, below=0.3cm of align] {Uniform\\index sampling};
+\node[ann, below=0.3cm of stgcn] {$(N,2,64,14,1){\to}(N,8)$};
+\node[ann, below=0.3cm of out]   {argmax\\(8 lớp)};
+\end{tikzpicture}%
+}
+\caption{Pipeline đầu cuối nhận dạng hành động người đề xuất. Mỗi bước biến đổi
+dữ liệu từ frame RGB thô đến nhãn hành động cuối cùng; nhãn trên mũi tên thể hiện
+chiều tensor tại mỗi giai đoạn.}
+\label{fig:pipeline}
+\end{figure*}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Các Nghiên Cứu Liên Quan}
+\label{sec:related}
+
+\subsection{Nhận Dạng Hành Động Dựa Trên Khung Xương}
+Yan \textit{và cộng sự}~\cite{yan2018stgcn} đề xuất ST-GCN, biểu diễn cơ thể
+người dưới dạng đồ thị không-thời gian trong đó các node là khớp xương và các
+cạnh mã hóa kết nối giải phẫu và chuyển tiếp thời gian. Mô hình phân vùng hàng
+xóm thành ba tập con -- self-loop, hướng tâm (centripetal) và ly tâm (centrifugal)
+-- cho phép học đặc trưng không gian thích nghi. ST-GCN trở thành baseline chuẩn
+cho HAR dựa trên đồ thị và truyền cảm hứng cho nhiều công trình kế tiếp như
+AGCN~\cite{shi2019agcn} và MS-G3D~\cite{liu2020msg3d}.
+
+\subsection{Ước Lượng Tư Thế Phục Vụ HAR}
+OpenPose~\cite{cao2019openpose} và HRNet~\cite{sun2019hrnet} cho chất lượng khung
+xương cao nhưng yêu cầu pipeline đa giai đoạn tốn kém về tính toán. YOLOv8-pose
+~\cite{ultralytics2023yolov8} tích hợp phát hiện đối tượng và hồi quy keypoint
+trong một lần truyền mạng duy nhất, phù hợp cho ứng dụng thời gian thực. Một số
+nghiên cứu gần đây đã sử dụng khung xương từ YOLO làm đầu vào cho bộ phân loại
+GCN~\cite{liu2023yologcn}, cho thấy hiệu năng cạnh tranh với độ trễ thấp hơn
+đáng kể.
+
+\subsection{Penn Action Dataset}
+Zhang \textit{và cộng sự}~\cite{zhang2013pennaction} giới thiệu Penn Action, tập
+dữ liệu gồm 2.326 video clip thuộc 15 thể loại thể thao và bài tập với khung
+xương 13 khớp được gán nhãn thủ công theo từng frame. Sự biến đổi cao trong cùng
+một lớp (độ dài clip từ 18 đến 663 frame) và góc nhìn đa dạng làm cho đây trở
+thành benchmark thử thách cho cả ước lượng tư thế lẫn phân loại hành động.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Pipeline Đề Xuất}
+\label{sec:method}
+
+\subsection{Tổng Quan Hệ Thống}
+
+Hình~\ref{fig:pipeline} minh họa pipeline đầu cuối được đề xuất. Mỗi video đầu
+vào được giải mã thành các frame riêng lẻ; YOLOv8-pose ước lượng khung xương 17
+khớp COCO trên mỗi frame; bước ánh xạ chọn 13 khớp Penn Action và thêm một node
+trung tâm ảo, tạo ra chuỗi khung xương 14 node; căn chỉnh thời gian lấy mẫu lại
+chuỗi về đúng 64 frame; cuối cùng ST-GCN phân loại đồ thị không-thời gian thu
+được thành một trong tám hành động bài tập.
+
+\subsection{Trích Xuất Đặc Trưng Với YOLOv8-pose}
+\label{sec:yolo}
+
+Chúng tôi sử dụng biến thể \textit{yolov8n-pose} (nano, $\sim$6,5 MB), trả về
+17 keypoint định dạng COCO trên mỗi người được phát hiện. Bộ keypoint COCO bao
+gồm các điểm mặt (mắt, tai) không có đối ứng trong bộ gán nhãn 13 khớp của Penn
+Action. Do đó, chúng tôi chỉ giữ lại 13 khớp có ý nghĩa cấu trúc bằng cách ánh
+xạ chỉ số:
+\[
+  \text{COCO}_{[0,\,5{:}17]} \;\longrightarrow\; \text{Penn Action}_{[0{:}13]},
+\]
+bỏ qua chỉ số COCO 1--4 (mắt trái/phải và tai trái/phải). Khi không phát hiện
+người trong một frame, toạ độ keypoint tương ứng được đặt về 0.
+
+\subsection{Ánh Xạ Khớp Và Node Trung Tâm Ảo}
+\label{sec:remap}
+
+ST-GCN yêu cầu cấu trúc khung xương cố định. Theo cấu hình huấn luyện, chúng tôi
+bổ sung \textbf{node trung tâm ảo} (khớp 13) được định nghĩa là tâm của bốn khớp
+thân người:
+\[
+  \mathbf{p}_{13} = \frac{1}{4}\bigl(\mathbf{p}_{\text{l\_sho}} +
+  \mathbf{p}_{\text{r\_sho}} + \mathbf{p}_{\text{l\_hip}} +
+  \mathbf{p}_{\text{r\_hip}}\bigr).
+\]
+Node trung tâm này đóng vai trò gốc trong phân vùng đồ thị không gian
+(xem Phần~\ref{sec:graph}), cung cấp điểm tham chiếu ổn định cho tổng hợp
+hướng tâm và ly tâm.
+
+\subsection{Căn Chỉnh Thời Gian}
+\label{sec:temporal}
+
+Độ dài clip Penn Action rất đa dạng (18--663 frame, trung bình 83,3). ST-GCN yêu
+cầu chiều thời gian cố định. Chúng tôi sử dụng \textbf{lấy mẫu lại theo chỉ số
+đều}: với clip có $T$ frame, chọn $T_{\text{target}} = 64$ chỉ số cách đều nhau
+trên $[0, T-1]$ và thu thập keypoint tương ứng. Cách này giữ nguyên cấu trúc
+chuyển động tổng thể, đồng thời bỏ qua frame dư trong clip dài và tránh lặp lại
+frame biên.
+
+\subsection{Kiến Trúc ST-GCN}
+\label{sec:stgcn}
+
+\subsubsection{Cấu Hình Đồ Thị Không Gian}
+\label{sec:graph}
+Khung xương được mô hình hóa là đồ thị $\mathcal{G} = (\mathcal{V}, \mathcal{E})$
+trong đó $\mathcal{V}$ gồm 14 node và $\mathcal{E}$ gồm 17 cạnh giải phẫu (ví dụ:
+vai--khuỷu tay, hông--đầu gối) cùng 4 cạnh bổ sung nối node trung tâm với hai
+vai và hai hông. Theo ST-GCN~\cite{yan2018stgcn}, các node được phân vùng thành
+ba tập so với khoảng cách đến node trung tâm:
+\begin{itemize}
+  \item $\mathbf{A}^{(0)}$: self-loop và hàng xóm cùng khoảng cách,
+  \item $\mathbf{A}^{(1)}$: cạnh hướng tâm (node con $\to$ node cha),
+  \item $\mathbf{A}^{(2)}$: cạnh ly tâm (node cha $\to$ node con).
+\end{itemize}
+Mỗi ma trận kề được chuẩn hóa theo bậc. Hình~\ref{fig:graph} minh họa sự phân
+công phân vùng.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.75\columnwidth]{charts/stgcn_notebook/graph_skeleton_partitions.png}
+  \caption{Đồ thị khung xương 14 node tô màu theo loại phân vùng. Xanh lá:
+  self-loop; cam: hướng tâm; đỏ: ly tâm. Node vàng (trung tâm) kết nối với
+  hai vai và hai hông.}
+  \label{fig:graph}
+\end{figure}
+
+\subsubsection{Kiến Trúc Mạng}
+Mô hình xếp chồng sáu block ST-GCN. Mỗi block thực hiện tích chập đồ thị không
+gian (GCN) tiếp theo là tích chập thời gian (TCN) với kernel $9 \times 1$ và
+padding $4 \times 0$, cho trường tiếp nhận thời gian 9 frame. Bảng~\ref{tab:arch}
+tổng hợp cấu hình.
+
+\begin{table}[!t]
+\caption{Cấu Hình Các Block ST-GCN}
+\label{tab:arch}
+\centering
+\begin{tabular}{ccccc}
+\toprule
+Block & Kênh vào & Kênh ra & Stride & Residual \\
+\midrule
+1 & 2   & 64  & 1 & Không \\
+2 & 64  & 64  & 1 & Có    \\
+3 & 64  & 128 & 2 & Có    \\
+4 & 128 & 128 & 1 & Có    \\
+5 & 128 & 256 & 2 & Có    \\
+6 & 256 & 256 & 1 & Có    \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Sau sáu block, global average pooling rút gọn chiều thời gian về 1, và một lớp
+tích chập $1 \times 1$ ánh xạ vector đặc trưng 256 chiều thành 8 điểm số lớp.
+Batch normalization đầu vào được áp dụng trên chiều $C \times V = 28$. Tensor đầu
+vào có dạng $(N, C{=}2, T{=}64, V{=}14, M{=}1)$ trong đó $M$ là số người.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Thực Nghiệm}
+\label{sec:exp}
+
+\subsection{Dữ Liệu Và Thiết Lập}
+\label{sec:setup}
+
+\textbf{Tập dữ liệu.} Chúng tôi sử dụng Penn Action Dataset~\cite{zhang2013pennaction},
+lọc lấy 8 loại bài tập tạo thành nhóm có ý nghĩa đồng nhất về mặt ngữ nghĩa:
+\textit{bench\_press}, \textit{clean\_and\_jerk}, \textit{jump\_rope},
+\textit{jumping\_jacks}, \textit{pullup}, \textit{pushup}, \textit{situp},
+\textit{squat}. Tập con kết quả gồm \textbf{1.163 video}. Bảng~\ref{tab:dataset}
+chi tiết phân phối theo lớp. Chúng tôi chia 80/20 cho train/validation (stratified,
+\texttt{random\_state=42}), thu được 930 video huấn luyện và 233 video kiểm định.
+
+\begin{table}[!t]
+\caption{Phân Phối Tập Con Bài Tập Penn Action}
+\label{tab:dataset}
+\centering
+\begin{tabular}{lcc}
+\toprule
+Hành động & Tổng số & Val \\
+\midrule
+squat            & 231 & 46 \\
+pushup           & 211 & 42 \\
+pullup           & 199 & 40 \\
+bench\_press     & 140 & 28 \\
+jumping\_jacks   & 112 & 23 \\
+situp            & 100 & 20 \\
+clean\_and\_jerk &  88 & 18 \\
+jump\_rope       &  82 & 16 \\
+\midrule
+\textbf{Tổng}    & \textbf{1.163} & \textbf{233} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Hình~\ref{fig:datastats} cho thấy tập con có sự mất cân bằng nhẹ giữa các lớp
+(squat gấp gần 3 lần jump\_rope) và phân phối độ dài clip lệch phải mạnh, với
+phần lớn video dưới 150 frame nhưng một số clip dài tới 663 frame.
+
+\begin{figure}[!t]
+  \centering
+  \includegraphics[width=\columnwidth]{charts/stgcn_notebook/data_stats_and_length_distribution.png}
+  \caption{Phân phối tập con bài tập Penn Action. Trái: số lượng video theo lớp
+  (mất cân bằng nhẹ). Phải: phân phối độ dài clip thô trước khi căn chỉnh thời
+  gian (lệch phải, mean $\approx$ 83 frame).}
+  \label{fig:datastats}
+\end{figure}
+
+\textbf{Thiết lập huấn luyện.} ST-GCN được huấn luyện trên Google Colab với GPU
+NVIDIA T4 bằng PyTorch. Optimizer: Adam ($lr = 10^{-3}$, weight decay $= 10^{-4}$);
+learning rate scheduler: StepLR (step 30, $\gamma = 0,1$); batch size: 32; số
+epoch: 80; hàm mất mát: cross-entropy.
+
+\textbf{Chỉ số đánh giá.} Chúng tôi báo cáo độ chính xác Top-1, macro F1-score,
+precision/recall/F1 theo từng lớp và confusion matrix.
+
+% ── IV.B ──────────────────────────────────────────────────────────────────────
+\subsection{Thực Nghiệm 1: ST-GCN Với Keypoint Ground Truth}
+\label{sec:exp_gt}
+
+Trong thực nghiệm đầu tiên, ST-GCN được huấn luyện và đánh giá sử dụng tọa độ
+13 khớp được gán nhãn từ file \texttt{.mat} của Penn Action (cộng thêm node trung
+tâm ảo), cung cấp ngưỡng trên cho hiệu năng phân loại khi có ước lượng tư thế
+hoàn hảo.
+
+\textbf{Quá trình huấn luyện.} Hình~\ref{fig:training} thể hiện các đường cong
+huấn luyện. Mô hình hội tụ nhanh: đến epoch 19, độ chính xác validation vượt
+93,99\%. Việc giảm learning rate tại epoch 30 (nhân $0,1$) đẩy nhanh hội tụ, và
+mô hình đạt hiệu năng gần hoàn hảo ($\approx$97--99\%) từ epoch 31 trở đi.
+Checkpoint tốt nhất (epoch 45) đạt 99,14\% accuracy và macro F1 = 0,9890.
+
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=\textwidth]{charts/stgcn_notebook/training_curves.png}
+  \caption{Lịch sử huấn luyện qua 80 epoch: loss (trái), accuracy (giữa) và macro
+  F1 (phải) cho tập train (xanh) và validation (cam). Đường thẳng đứt nét đánh
+  dấu thời điểm giảm learning rate tại epoch 30.}
+  \label{fig:training}
+\end{figure*}
+
+\textbf{Kết quả.} Tại epoch 80, mô hình đạt \textbf{98,28\%} độ chính xác và
+\textbf{0,9814} macro F1 trên 233 video validation. Tất cả tám lớp đều đạt F1
+$\geq$ 0,96. Kết quả chi tiết theo từng lớp được đặt cạnh kết quả pipeline tại
+Phần~\ref{sec:comparison} để tiện so sánh trực tiếp.
+
+% ── IV.C ──────────────────────────────────────────────────────────────────────
+\subsection{Thực Nghiệm 2: Pipeline Đầu Cuối YOLO + ST-GCN}
+\label{sec:exp_pipeline}
+
+Trong thực nghiệm thứ hai, keypoint ground truth được thay bằng keypoint từ
+YOLOv8n-pose. Trọng số ST-GCN \textit{giữ nguyên} từ Thực nghiệm~1. Hình~\ref{fig:demo} minh
+họa đầu ra điển hình của pipeline: khung xương 14 khớp từ YOLO overlay lên frame
+và biểu đồ softmax confidence của ST-GCN.
+
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=\textwidth]{charts/yolo_stgcn_notebook/yolo_skeleton_demo.png}
+  \caption{Đầu ra pipeline trên video \texttt{0341} (\textit{bench\_press}). Trái:
+  khung xương YOLO 14 khớp overlay lên frame; node vàng là trung tâm ảo được tính
+  từ vai và hông. Phải: xác suất softmax ST-GCN trên 8 lớp.}
+  \label{fig:demo}
+\end{figure*}
+
+Pipeline đạt \textbf{73,82\%} độ chính xác và \textbf{0,7239} macro F1, giảm
+24,46 điểm phần trăm so với Thực nghiệm~1. Mức suy giảm không đồng đều giữa
+các lớp:
+\begin{itemize}
+  \item \textit{jumping\_jacks} (F1 = 0,94) và \textit{pullup} (F1 = 0,93) duy
+        trì hiệu năng cao do chuyển động biên độ lớn, đối xứng, ít bị ảnh hưởng
+        bởi sai số keypoint.
+  \item \textit{bench\_press} suy giảm nặng nhất (F1 = 0,38, recall = 25\%): tư
+        thế nằm ngang khiến YOLO ước lượng sai và khung xương dễ nhầm với
+        \textit{pushup} hoặc \textit{situp}.
+  \item \textit{situp} bị nhiều lớp khác ``tràn vào'' (precision = 0,36), nhất
+        quán với mẫu nhầm lẫn từ \textit{bench\_press}.
+\end{itemize}
+
+% ── IV.E ──────────────────────────────────────────────────────────────────────
+\subsection{Tổng Hợp Và So Sánh}
+\label{sec:comparison}
+
+Bảng~\ref{tab:comparison_results} đặt kết quả hai thực nghiệm cạnh nhau.
+Hình~\ref{fig:cm_compare} so sánh trực tiếp hai confusion matrix, làm rõ các
+mẫu nhầm lẫn phát sinh khi chuyển từ GT keypoints sang YOLO keypoints.
+Bảng~\ref{tab:summary} tóm tắt các chỉ số tổng thể.
+
+\begin{table*}[!t]
+\caption{So Sánh Kết Quả Phân Loại: ST-GCN + GT Keypoint (trái) Và YOLO + ST-GCN Pipeline (phải)}
+\label{tab:comparison_results}
+\centering
+\begin{minipage}{0.47\textwidth}
+\centering\small
+\begin{tabular}{lcccc}
+\toprule
+Lớp & Prec. & Rec. & F1 & Sup. \\
+\midrule
+bench\_press     & 1,00 & 0,96 & 0,98 & 28 \\
+clean\_and\_jerk & 0,95 & 1,00 & 0,97 & 18 \\
+jump\_rope       & 1,00 & 0,94 & 0,97 & 16 \\
+jumping\_jacks   & 1,00 & 1,00 & 1,00 & 23 \\
+pullup           & 1,00 & 1,00 & 1,00 & 40 \\
+pushup           & 0,95 & 0,98 & 0,96 & 42 \\
+situp            & 1,00 & 0,95 & 0,97 & 20 \\
+squat            & 0,98 & 1,00 & 0,99 & 46 \\
+\midrule
+\textbf{Accuracy} & \multicolumn{4}{c}{\textbf{98,28\%}} \\
+\textbf{Macro F1} & \multicolumn{4}{c}{\textbf{0,9814}} \\
+\bottomrule
+\end{tabular}
+\end{minipage}
+\hfill
+\begin{minipage}{0.47\textwidth}
+\centering\small
+\begin{tabular}{lcccc}
+\toprule
+Lớp & Prec. & Rec. & F1 & Sup. \\
+\midrule
+bench\_press     & 0,78 & 0,25 & 0,38 & 28 \\
+clean\_and\_jerk & 0,75 & 0,83 & 0,79 & 18 \\
+jump\_rope       & 0,70 & 0,88 & 0,78 & 16 \\
+jumping\_jacks   & 0,92 & 0,96 & 0,94 & 23 \\
+pullup           & 1,00 & 0,88 & 0,93 & 40 \\
+pushup           & 0,76 & 0,60 & 0,67 & 42 \\
+situp            & 0,36 & 0,80 & 0,49 & 20 \\
+squat            & 0,81 & 0,83 & 0,82 & 46 \\
+\midrule
+\textbf{Accuracy} & \multicolumn{4}{c}{\textbf{73,82\%}} \\
+\textbf{Macro F1} & \multicolumn{4}{c}{\textbf{0,7239}} \\
+\bottomrule
+\end{tabular}
+\end{minipage}
+\end{table*}
+
+\begin{figure*}[!t]
+\centering
+\begin{minipage}{0.48\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{charts/stgcn_notebook/confusion_matrix_gt.png}
+  \par\smallskip\small\textit{(a) ST-GCN + Ground Truth --- Accuracy = 98,28\%}
+\end{minipage}
+\hfill
+\begin{minipage}{0.48\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{charts/yolo_stgcn_notebook/pipeline_confusion_matrix.png}
+  \par\smallskip\small\textit{(b) YOLO + ST-GCN Pipeline --- Accuracy = 73,82\%}
+\end{minipage}
+\caption{So sánh confusion matrix giữa hai thực nghiệm trên cùng tập val 233
+video. Với GT keypoints (a), hầu hết phần tử ngoài đường chéo bằng không. Với
+YOLO keypoints (b), nhầm lẫn tập trung ở \textit{bench\_press} (bị nhầm sang
+\textit{situp}/\textit{pushup}) và \textit{situp} (bị nhiễm từ lớp khác).}
+\label{fig:cm_compare}
+\end{figure*}
+
+\begin{table}[!t]
+\caption{Tổng Hợp Hiệu Năng}
+\label{tab:summary}
+\centering
+\begin{tabular}{lcc}
+\toprule
+Cấu hình & Accuracy & Macro F1 \\
+\midrule
+ST-GCN + GT keypoint     & \textbf{98,28\%} & \textbf{0,9814} \\
+YOLO + ST-GCN (pipeline) & 73,82\%          & 0,7239 \\
+\midrule
+Khoảng cách & $-$24,46\% & $-$0,2575 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+ST-GCN chứng tỏ là bộ phân loại rất hiệu quả khi được cung cấp khung xương chính
+xác. Nút thắt cổ chai của hệ thống đầu cuối nằm ở chất lượng keypoint ước lượng
+tự động, không phải ở năng lực của bộ phân loại.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Ablation Study: Chất Lượng Keypoint YOLO}
+\label{sec:ablation}
+
+Phần thực nghiệm cho thấy khoảng cách 24,46\% accuracy giữa hai cấu hình. Để
+làm rõ nguồn gốc của sự suy giảm này, chúng tôi tiến hành phân tích định lượng
+và định tính chất lượng keypoint YOLO so với ground truth Penn Action, đo trên
+1.158 video bài tập (5 video bỏ qua do không phát hiện người), sai số chuẩn hóa
+theo chiều cao người.
+
+\begin{figure*}[t]
+\centering
+\begin{minipage}{0.48\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{charts/yolo_stgcn_notebook/keypoint_comparison_pushup.jpg}
+  \par\smallskip\small\textit{(a) Video \#1348 (pushup): GT (đỏ) và YOLO (xanh lam)}
+\end{minipage}
+\hfill
+\begin{minipage}{0.48\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{charts/yolo_stgcn_notebook/yolo_keypoint_quality.png}
+  \par\smallskip\small\textit{(b) Sai số chuẩn hóa trung bình theo từng khớp (1.158 video)}
+\end{minipage}
+\caption{Phân tích chất lượng keypoint YOLO so với ground truth Penn Action.
+Hình (a) minh họa sự lệch điển hình: YOLO đặt nhiều khớp chi dưới (đầu gối,
+mắt cá chân) và khớp hông sai vị trí đáng kể so với annotation. Hình (b)
+xác nhận định lượng: mắt cá chân có sai số cao nhất; đầu và vai tương đối ổn định.}
+\label{fig:kp_ablation}
+\end{figure*}
+
+Sai số keypoint cao xuất phát từ ba nguyên nhân chính. (1)~\textbf{Domain
+shift:} YOLOv8n-pose được huấn luyện trên COCO với đa dạng tỉ lệ người, trong
+khi Penn Action quay người ở cự ly gần -- đầu hồi quy keypoint phải ngoại suy
+ngoài phân phối huấn luyện. (2)~\textbf{Sai lệch định nghĩa khớp:} COCO và
+Penn Action dùng điểm bám giải phẫu khác nhau (ví dụ: trung tâm hông COCO
+so với mào chậu Penn Action), tạo ra lệch hệ thống không thể loại bằng ánh
+xạ chỉ số. (3)~\textbf{Che khuất tư thế bài tập:} các tư thế như nằm (bench
+press) hay ngồi xổm (squat) che khuất nghiêm trọng khớp chi dưới -- đúng là
+nhóm có sai số phân loại lớn nhất.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Thảo Luận}
+\label{sec:discussion}
+
+\textbf{Độ bền vững và độ nhạy cảm.} Các hành động có chuyển động khớp biên độ
+lớn, đối xứng, tần số cao (\textit{jumping\_jacks}, \textit{pullup}) phần lớn
+không nhạy với nhiễu keypoint mức vừa phải. Ngược lại, các hành động thực hiện ở
+góc nhìn không chuẩn hoặc bị che khuất một phần (\textit{bench\_press},
+\textit{situp}) rất dễ bị ảnh hưởng. Điều này gợi ý các hướng cải thiện trong
+tương lai: ước lượng tư thế bất biến góc nhìn, hoặc tăng cường dữ liệu với
+keypoint nhiễu trong quá trình huấn luyện ST-GCN.
+
+\textbf{Xử lý keypoint bị thiếu.} Khi YOLO không phát hiện người trong một frame,
+chúng tôi đặt tất cả keypoint về 0. Điều này truyền một khung xương ``xẹp'' giả
+tạo qua mô hình thời gian và có thể tạo ra các mẫu thời gian sai. Một giải pháp
+hợp lý hơn -- như lấy frame hợp lệ gần nhất trước đó (forward-filling) hoặc nội
+suy tuyến tính -- sẽ cải thiện độ bền vững.
+
+\textbf{Căn chỉnh thời gian.} Lấy mẫu lại đều bỏ qua cấu trúc thời gian trong
+clip rất dài (lên đến 663 frame, nén xuống 64). Chiến lược cửa sổ trượt thích
+nghi (adaptive sliding window) hoặc pooling thời gian phân cấp có thể bảo toàn
+tốt hơn các pha chuyển động có ý nghĩa.
+
+\textbf{Quy mô mô hình YOLO.} Chúng tôi dùng \textit{yolov8n-pose} (nano, 6,5
+MB) ưu tiên tốc độ. Các biến thể lớn hơn (\textit{yolov8x-pose}) có thể thu hẹp
+khoảng cách chất lượng keypoint với chi phí độ trễ suy luận cao hơn.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Kết Luận}
+\label{sec:conclusion}
+
+Chúng tôi đã trình bày một pipeline nhận dạng hành động người đầu cuối kết hợp
+YOLOv8-pose và ST-GCN, được đánh giá trên tập con 8 lớp bài tập của Penn Action.
+ST-GCN với keypoint ground truth đạt 98,28\% độ chính xác, xác nhận năng lực biểu
+diễn mạnh mẽ của mô hình cho phân loại hành động dựa trên khung xương. Pipeline
+tự động hoàn toàn với keypoint từ YOLO đạt 73,82\%, khoảng cách $\approx$24,5
+điểm phần trăm chủ yếu do sai số ước lượng tư thế -- đặc biệt ở các khớp mắt cá
+chân và tư thế bài tập dễ bị che khuất.
+
+Các kết quả này cho thấy \textit{chất lượng ước lượng tư thế là nút thắt hiệu
+năng chính} trong pipeline HAR dựa trên khung xương. Các hướng nghiên cứu tiếp
+theo bao gồm: (i)~tinh chỉnh (fine-tune) YOLOv8-pose trên dữ liệu miền bài tập
+để giảm domain shift; (ii)~huấn luyện ST-GCN với tăng cường nhiễu keypoint để
+cải thiện độ bền vững; và (iii)~khám phá tích chập đồ thị có trọng số tin cậy
+(confidence-weighted) để giảm trọng số các khớp không chắc chắn trong suy luận.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{thebibliography}{00}
+
+\bibitem{yan2018stgcn}
+S. Yan, Y. Xiong, and D. Lin,
+``Spatial Temporal Graph Convolutional Networks for Skeleton-Based Action Recognition,''
+in \textit{Proc. AAAI Conf. Artif. Intell.}, 2018.
+
+\bibitem{shi2019agcn}
+L. Shi, Y. Zhang, J. Cheng, and H. Lu,
+``Two-Stream Adaptive Graph Convolutional Networks for Skeleton-Based Action Recognition,''
+in \textit{Proc. IEEE CVPR}, 2019.
+
+\bibitem{liu2020msg3d}
+Z. Liu, H. Zhang, Z. Chen, Z. Wang, and W. Ouyang,
+``Disentangling and Unifying Graph Convolutions for Skeleton-Based Action Recognition,''
+in \textit{Proc. IEEE CVPR}, 2020.
+
+\bibitem{cao2019openpose}
+Z. Cao, G. Hidalgo, T. Simon, S.-E. Wei, and Y. Sheikh,
+``OpenPose: Realtime Multi-Person 2D Pose Estimation using Part Affinity Fields,''
+\textit{IEEE Trans. Pattern Anal. Mach. Intell.}, vol. 43, no. 1, pp. 172--186, 2021.
+
+\bibitem{sun2019hrnet}
+K. Sun, B. Xiao, D. Liu, and J. Wang,
+``Deep High-Resolution Representation Learning for Visual Recognition,''
+\textit{IEEE Trans. Pattern Anal. Mach. Intell.}, vol. 43, no. 10, pp. 3349--3364, 2021.
+
+\bibitem{ultralytics2023yolov8}
+G. Jocher, A. Chaurasia, and J. Qiu,
+``Ultralytics YOLOv8,'' 2023. [Online].
+Available: \url{https://github.com/ultralytics/ultralytics}
+
+\bibitem{liu2023yologcn}
+Y. Liu, Z. Zhang, and C. Li,
+``Real-Time Action Recognition Using YOLO-Based Pose Estimation and Graph Convolutional Networks,''
+\textit{Sensors}, vol. 23, no. 8, p. 3912, 2023.
+
+\bibitem{zhang2013pennaction}
+W. Zhang, M. Zhu, and K. G. Derpanis,
+``From Actemes to Action: A Strongly-supervised Representation for Detailed Action Understanding,''
+in \textit{Proc. IEEE ICCV}, 2013.
+
+\end{thebibliography}
+
+\end{document}
