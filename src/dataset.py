@@ -115,6 +115,7 @@ def build_data_tensors(
     raw_frame_counts : list of original video lengths (before alignment)
     """
     all_data, all_labels, all_flags, raw_frame_counts = [], [], [], []
+    all_video_ids, all_actions = [], []
 
     for mat_path in sorted(glob.glob(os.path.join(labels_dir, '*.mat'))):
         try:
@@ -126,7 +127,6 @@ def build_data_tensors(
             if action not in exercise_classes:
                 continue
 
-            # Official subject-isolated split flag (1=train, 0=test)
             train_flag = int(mat_data['train'][0][0]) if 'train' in mat_data else 1
 
             # Stack x, y → (T, 13, 2)
@@ -141,6 +141,8 @@ def build_data_tensors(
             all_data.append(tensor)
             all_labels.append(class_to_id[action])
             all_flags.append(train_flag)
+            all_video_ids.append(os.path.splitext(os.path.basename(mat_path))[0])
+            all_actions.append(action)
 
         except Exception as exc:
             print(f"  [skip] {os.path.basename(mat_path)}: {exc}")
@@ -148,6 +150,21 @@ def build_data_tensors(
     data   = np.array(all_data,   dtype=np.float32)   # (N, 2, T, 14, 1)
     labels = np.array(all_labels, dtype=np.int64)
     flags  = np.array(all_flags,  dtype=np.int8)
+
+    # If the dataset has no official test split (all flags == 1), fall back to a
+    # subject-isolated split: within each class, videos are ordered by subject
+    # (contiguous IDs = same subject), so taking the last 30% per class as test
+    # avoids the same subject appearing in both partitions.
+    if (flags == 0).sum() == 0:
+        print('[dataset] No official test split found — applying per-class subject-isolated split (last 30% per class = test).')
+        flags = np.ones(len(flags), dtype=np.int8)
+        for cls in exercise_classes:
+            idx = [i for i, a in enumerate(all_actions) if a == cls]
+            if not idx:
+                continue
+            n_test = max(1, int(round(len(idx) * 0.3)))
+            for i in idx[-n_test:]:
+                flags[i] = 0
 
     return data, labels, flags, raw_frame_counts
 

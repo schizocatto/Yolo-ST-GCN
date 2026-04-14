@@ -87,6 +87,8 @@ def eval_epoch(
             all_preds.extend(preds.cpu().numpy())
             all_labels.extend(batch_labels.cpu().numpy())
 
+    if len(loader) == 0 or not all_labels:
+        return 0.0, 0.0, 0.0, [], []
     avg_loss = total_loss / len(loader)
     accuracy = accuracy_score(all_labels, all_preds)
     macro_f1 = f1_score(all_labels, all_preds, average='macro', zero_division=0)
