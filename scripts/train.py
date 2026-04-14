@@ -59,7 +59,7 @@ def main():
 
     # ── Data (official subject-isolated split via Penn Action train flag) ──
     print('Loading data...')
-    data, labels, flags, _ = build_data_tensors(args.labels_dir)
+    data, labels, flags, _, _ = build_data_tensors(args.labels_dir)
     print(f'  Loaded {len(data)} samples  '
           f'(train flag=1: {(flags==1).sum()}  test flag=0: {(flags==0).sum()})')
 

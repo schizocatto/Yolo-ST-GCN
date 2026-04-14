@@ -121,20 +121,21 @@ class TestPreprocessing:
 
 class TestDataset:
     def test_build_data_tensors(self, synthetic_labels_dir):
-        data, labels, flags, raw_counts = build_data_tensors(synthetic_labels_dir)
+        data, labels, flags, raw_counts, video_ids = build_data_tensors(synthetic_labels_dir)
         assert data.shape[1:] == (2, TARGET_FRAMES, 14, 1), f'Unexpected data shape: {data.shape}'
         assert len(data) == len(labels) == len(flags)
         assert len(raw_counts) == len(data)
+        assert len(video_ids) == len(data)
 
     def test_official_split_flags(self, synthetic_labels_dir):
-        _, _, flags, _ = build_data_tensors(synthetic_labels_dir)
+        _, _, flags, _, _ = build_data_tensors(synthetic_labels_dir)
         # Fixture creates 5 train + 1 test per class (8 classes = 8 test, 40 train)
         assert set(flags.tolist()) == {0, 1}, 'flags should contain both 0 and 1'
         assert (flags == 0).sum() == 8,  'Expected 8 official test samples'
         assert (flags == 1).sum() == 40, 'Expected 40 official train samples'
 
     def test_penn_action_dataset(self, synthetic_labels_dir):
-        data, labels, flags, _ = build_data_tensors(synthetic_labels_dir)
+        data, labels, flags, _, _ = build_data_tensors(synthetic_labels_dir)
         ds = PennActionDataset(data, labels)
         assert len(ds) == len(data)
         x, y = ds[0]
@@ -199,7 +200,7 @@ class TestModel:
 
 class TestTraining:
     def _make_loader(self, synthetic_labels_dir):
-        data, labels, flags, _ = build_data_tensors(synthetic_labels_dir)
+        data, labels, flags, _, _ = build_data_tensors(synthetic_labels_dir)
         ds     = PennActionDataset(data, labels)
         return DataLoader(ds, batch_size=8, shuffle=True, drop_last=False)
 

@@ -113,6 +113,7 @@ def build_data_tensors(
     labels           : int64 ndarray    (N,)
     flags            : int8 ndarray     (N,)  — 1 = official train, 0 = official test
     raw_frame_counts : list of original video lengths (before alignment)
+    video_ids        : list of video ID strings (stem of each .mat filename)
     """
     all_data, all_labels, all_flags, raw_frame_counts = [], [], [], []
     all_video_ids, all_actions = [], []
@@ -166,7 +167,7 @@ def build_data_tensors(
             for i in idx[-n_test:]:
                 flags[i] = 0
 
-    return data, labels, flags, raw_frame_counts
+    return data, labels, flags, raw_frame_counts, all_video_ids
 
 
 # ---------------------------------------------------------------------------
