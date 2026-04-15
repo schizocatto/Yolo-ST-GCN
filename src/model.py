@@ -17,7 +17,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.graph import Graph_PennAction_14Nodes
+from src.graph import Graph_PennAction_14Nodes, Graph_COCO17_18Nodes
 from src.config import NUM_CLASSES, IN_CHANNELS
 
 
@@ -145,6 +145,55 @@ class Model_STGCN(nn.Module):
             x = gcn(x)
 
         # Global average pool → classify
+        x = F.avg_pool2d(x, x.size()[2:])
+        x = x.view(N, M, -1, 1, 1).mean(dim=1)
+        x = self.fcn(x)
+        return x.view(x.size(0), -1)
+
+
+class Model_STGCN_COCO18(nn.Module):
+    """
+    ST-GCN for full COCO-17 + virtual center (18 joints).
+
+    Uses Graph_COCO17_18Nodes which builds centripetal/centrifugal partitions
+    over all 17 COCO keypoints (including face landmarks) plus virtual center.
+
+    Input tensor shape: (N, C=2, T, V=18, M=1)
+    """
+
+    def __init__(self, num_classes: int = NUM_CLASSES, in_channels: int = IN_CHANNELS):
+        super().__init__()
+        self.graph = Graph_COCO17_18Nodes()
+        A = self.graph.A
+
+        self.data_bn = nn.BatchNorm1d(in_channels * self.graph.num_node)
+
+        self.st_gcn_networks = nn.ModuleList([
+            STGCN_Block(in_channels, 64,  A, residual=False),
+            STGCN_Block(64,  64,  A),
+            STGCN_Block(64,  64,  A),
+            STGCN_Block(64,  64,  A),
+            STGCN_Block(64,  128, A, stride=2),
+            STGCN_Block(128, 128, A),
+            STGCN_Block(128, 128, A),
+            STGCN_Block(128, 256, A, stride=2),
+            STGCN_Block(256, 256, A),
+            STGCN_Block(256, 256, A),
+        ])
+
+        self.fcn = nn.Conv2d(256, num_classes, kernel_size=1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        N, C, T, V, M = x.size()
+
+        x = x.permute(0, 4, 3, 1, 2).contiguous().view(N, M * V * C, T)
+        x = self.data_bn(x)
+        x = x.view(N, M, V, C, T).permute(0, 1, 3, 4, 2).contiguous()
+        x = x.view(N * M, C, T, V)
+
+        for gcn in self.st_gcn_networks:
+            x = gcn(x)
+
         x = F.avg_pool2d(x, x.size()[2:])
         x = x.view(N, M, -1, 1, 1).mean(dim=1)
         x = self.fcn(x)

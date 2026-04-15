@@ -28,8 +28,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from src.config import GYM99_NUM_CLASSES
 from src.dataset import PennActionDataset
 from src.gym99_dataset import build_gym99_data_tensors, infer_num_gym99_classes
-from src.model import Model_STGCN
-from src.two_stream_stgcn import TwoStream_STGCN
+from src.model import Model_STGCN_COCO18
+from src.two_stream_stgcn import TwoStream_STGCN_COCO18
 
 
 def parse_args():
@@ -117,9 +117,9 @@ def main():
     num_classes = args.num_classes if args.num_classes > 0 else inferred_classes
 
     model = (
-        TwoStream_STGCN(num_classes=num_classes)
+        TwoStream_STGCN_COCO18(num_classes=num_classes)
         if args.use_two_stream
-        else Model_STGCN(num_classes=num_classes)
+        else Model_STGCN_COCO18(num_classes=num_classes)
     ).to(device)
     state_dict = torch.load(args.weights, map_location=device)
     model.load_state_dict(state_dict)

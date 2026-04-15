@@ -27,9 +27,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from src.config import GYM99_NUM_CLASSES
 from src.dataset import PennActionDataset
 from src.gym99_dataset import build_gym99_data_tensors, infer_num_gym99_classes
-from src.model import Model_STGCN
+from src.model import Model_STGCN_COCO18
 from src.train import eval_epoch, train_model
-from src.two_stream_stgcn import TwoStream_STGCN
+from src.two_stream_stgcn import TwoStream_STGCN_COCO18
 
 
 def parse_args():
@@ -106,9 +106,9 @@ def main():
     print(f'DataLoader num_workers={args.num_workers}  two_stream={args.use_two_stream}')
 
     model = (
-        TwoStream_STGCN(num_classes=num_classes)
+        TwoStream_STGCN_COCO18(num_classes=num_classes)
         if args.use_two_stream
-        else Model_STGCN(num_classes=num_classes)
+        else Model_STGCN_COCO18(num_classes=num_classes)
     ).to(device)
     history = train_model(
         model=model,
@@ -120,7 +120,7 @@ def main():
         device=device,
     )
 
-    weights_name = 'stgcn_gym99_2s.pth' if args.use_two_stream else 'stgcn_gym99.pth'
+    weights_name = 'stgcn_gym99_coco18_2s.pth' if args.use_two_stream else 'stgcn_gym99_coco18.pth'
     weights_path = os.path.join(args.out_dir, weights_name)
     torch.save(model.state_dict(), weights_path)
     print(f'Saved weights: {weights_path}')

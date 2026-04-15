@@ -70,3 +70,47 @@ PENN_BONE_PAIRS_14 = PENN_BONES_14
 # COCO (17-keypoint) → Penn Action (13-keypoint) index mapping
 # Drops COCO indices 1-4 (eyes/ears); maps [0, 5..16] to Penn 0..12
 COCO_TO_PENN_IDX = [0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+
+# -----------------------------------------------------------------------
+# COCO-17 full joint layout (indices 0-16)
+# -----------------------------------------------------------------------
+COCO17_JOINT_NAMES = [
+    'nose',            #  0
+    'left_eye',        #  1
+    'right_eye',       #  2
+    'left_ear',        #  3
+    'right_ear',       #  4
+    'left_shoulder',   #  5
+    'right_shoulder',  #  6
+    'left_elbow',      #  7
+    'right_elbow',     #  8
+    'left_wrist',      #  9
+    'right_wrist',     # 10
+    'left_hip',        # 11
+    'right_hip',       # 12
+    'left_knee',       # 13
+    'right_knee',      # 14
+    'left_ankle',      # 15
+    'right_ankle',     # 16
+    'center*',         # 17  virtual center (added; mean of 5,6,11,12)
+]
+
+# Edges for the COCO-17 skeleton (body + face connections)
+COCO17_BONES = [
+    (0,  1), (0,  2),   # nose → eyes
+    (1,  3), (2,  4),   # eyes → ears
+    (0,  5), (0,  6),   # nose → shoulders (neck proxy)
+    (5,  7), (7,  9),   # left arm
+    (6,  8), (8, 10),   # right arm
+    (5, 11), (6, 12),   # shoulder → hip
+    (11, 13), (13, 15), # left leg
+    (12, 14), (14, 16), # right leg
+    (5,  6), (11, 12),  # shoulder–shoulder, hip–hip
+]
+
+# Connections from shoulders/hips to the virtual center (joint 17)
+COCO17_BONES_VIRTUAL = [(5, 17), (6, 17), (11, 17), (12, 17)]
+
+# Full 18-joint bone pair list (used by Graph_COCO17_18Nodes and bone stream)
+COCO17_BONES_18 = COCO17_BONES + COCO17_BONES_VIRTUAL
+COCO17_BONE_PAIRS_18 = COCO17_BONES_18

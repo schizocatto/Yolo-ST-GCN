@@ -101,6 +101,37 @@ def ensure_t_j_2(kpts: np.ndarray, expected_joints: int) -> np.ndarray:
     )
 
 
+def add_virtual_center_joint_coco17(kpts: np.ndarray) -> np.ndarray:
+    """
+    Append virtual center joint (index 17) as mean of COCO-17 joints 5,6,11,12
+    (left_shoulder, right_shoulder, left_hip, right_hip).
+
+    Parameters
+    ----------
+    kpts : (T, 17, 2)
+
+    Returns
+    -------
+    (T, 18, 2)
+    """
+    center = (kpts[:, 5, :] + kpts[:, 6, :] + kpts[:, 11, :] + kpts[:, 12, :]) / 4.0
+    return np.concatenate((kpts, center[:, np.newaxis, :]), axis=1)
+
+
+def to_stgcn_input_from_coco17_full(
+    coco_kpts: np.ndarray,
+    target_frames: int = TARGET_FRAMES,
+) -> np.ndarray:
+    """
+    Convert (T, 17, 2) COCO-17 keypoints to ST-GCN input (2, T, 18, 1),
+    keeping ALL 17 joints (including face landmarks) and appending a
+    virtual center joint (joint 17 = mean of shoulders + hips).
+    """
+    kpts17 = temporal_align(coco_kpts, target_frames)
+    kpts18 = add_virtual_center_joint_coco17(kpts17)
+    return np.expand_dims(np.transpose(kpts18, (2, 0, 1)), axis=-1).astype(np.float32)
+
+
 def calculate_bone_data(
     joint_data,
     bone_pairs: List[Tuple[int, int]],
