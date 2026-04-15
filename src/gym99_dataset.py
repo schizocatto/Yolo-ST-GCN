@@ -56,7 +56,7 @@ def build_gym99_data_tensors(
     split: str = 'all',
     keep_unknown_split: bool = False,
     return_bone_data: bool = False,
-    bone_pairs: List[Tuple[int, int]] = COCO17_BONE_PAIRS_18,
+    bone_pairs: List[Tuple[int, int]] = PENN_BONE_PAIRS_14,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, List[int], List[str]]:
     """
     Build ST-GCN tensors from Gym99-skeleton pickle.
