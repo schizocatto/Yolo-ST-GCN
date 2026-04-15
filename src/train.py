@@ -35,7 +35,10 @@ def train_epoch(
     accuracy : float
     """
     model.train()
-    total_loss, all_preds, all_labels = 0.0, [], []
+    total_loss = 0.0
+    total_correct = 0
+    total_samples = 0
+    use_non_blocking = device.type == 'cuda'
 
     iterator = loader
     if show_progress:
@@ -43,12 +46,12 @@ def train_epoch(
 
     for batch_data, batch_labels in iterator:
         if isinstance(batch_data, (tuple, list)) and len(batch_data) == 2:
-            joint_data = batch_data[0].to(device)
-            bone_data = batch_data[1].to(device)
+            joint_data = batch_data[0].to(device, non_blocking=use_non_blocking)
+            bone_data = batch_data[1].to(device, non_blocking=use_non_blocking)
         else:
-            joint_data = batch_data.to(device)
+            joint_data = batch_data.to(device, non_blocking=use_non_blocking)
             bone_data = None
-        batch_labels = batch_labels.to(device)
+        batch_labels = batch_labels.to(device, non_blocking=use_non_blocking)
 
         optimizer.zero_grad()
         outputs = model(joint_data, bone_data) if bone_data is not None else model(joint_data)
@@ -57,14 +60,14 @@ def train_epoch(
         optimizer.step()
 
         total_loss += loss.item()
-        _, preds = torch.max(outputs, 1)
-        all_preds.extend(preds.cpu().numpy())
-        all_labels.extend(batch_labels.cpu().numpy())
+        preds = torch.argmax(outputs, dim=1)
+        total_correct += (preds == batch_labels).sum().item()
+        total_samples += batch_labels.size(0)
 
     if len(loader) == 0:
         return 0.0, 0.0
     avg_loss = total_loss / len(loader)
-    accuracy = accuracy_score(all_labels, all_preds)
+    accuracy = (total_correct / total_samples) if total_samples > 0 else 0.0
     return avg_loss, accuracy
 
 
@@ -88,7 +91,12 @@ def eval_epoch(
     all_labels: list[int]
     """
     model.eval()
-    total_loss, all_preds, all_labels = 0.0, [], []
+    total_loss = 0.0
+    all_preds_tensors: List[torch.Tensor] = []
+    all_labels_tensors: List[torch.Tensor] = []
+    total_correct = 0
+    total_samples = 0
+    use_non_blocking = device.type == 'cuda'
 
     iterator = loader
     if show_progress:
@@ -97,25 +105,30 @@ def eval_epoch(
     with torch.no_grad():
         for batch_data, batch_labels in iterator:
             if isinstance(batch_data, (tuple, list)) and len(batch_data) == 2:
-                joint_data = batch_data[0].to(device)
-                bone_data = batch_data[1].to(device)
+                joint_data = batch_data[0].to(device, non_blocking=use_non_blocking)
+                bone_data = batch_data[1].to(device, non_blocking=use_non_blocking)
             else:
-                joint_data = batch_data.to(device)
+                joint_data = batch_data.to(device, non_blocking=use_non_blocking)
                 bone_data = None
-            batch_labels = batch_labels.to(device)
+            batch_labels = batch_labels.to(device, non_blocking=use_non_blocking)
 
             outputs  = model(joint_data, bone_data) if bone_data is not None else model(joint_data)
             loss     = criterion(outputs, batch_labels)
             total_loss += loss.item()
 
-            _, preds = torch.max(outputs, 1)
-            all_preds.extend(preds.cpu().numpy())
-            all_labels.extend(batch_labels.cpu().numpy())
+            preds = torch.argmax(outputs, dim=1)
+            total_correct += (preds == batch_labels).sum().item()
+            total_samples += batch_labels.size(0)
+            all_preds_tensors.append(preds.detach().cpu())
+            all_labels_tensors.append(batch_labels.detach().cpu())
 
-    if len(loader) == 0 or not all_labels:
+    if len(loader) == 0 or total_samples == 0:
         return 0.0, 0.0, 0.0, [], []
+
+    all_preds = torch.cat(all_preds_tensors).tolist() if all_preds_tensors else []
+    all_labels = torch.cat(all_labels_tensors).tolist() if all_labels_tensors else []
     avg_loss = total_loss / len(loader)
-    accuracy = accuracy_score(all_labels, all_preds)
+    accuracy = total_correct / total_samples
     macro_f1 = f1_score(all_labels, all_preds, average='macro', zero_division=0)
     return avg_loss, accuracy, macro_f1, all_preds, all_labels
 

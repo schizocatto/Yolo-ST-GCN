@@ -50,6 +50,10 @@ def parse_args():
                    help='Target joint layout for model input.')
     p.add_argument('--num_workers', '--num_wokers', dest='num_workers', type=int, default=0,
                    help='Number of DataLoader workers for both train/val (supports alias --num_wokers).')
+    p.add_argument('--max_train_samples', type=int, default=0,
+                   help='For quick smoke runs: keep only first N train samples (0 = all).')
+    p.add_argument('--max_val_samples', type=int, default=0,
+                   help='For quick smoke runs: keep only first N val samples (0 = all).')
     p.add_argument('--use_two_stream', action='store_true',
                    help='Enable 2s-STGCN (joint stream + bone stream with late fusion).')
     return p.parse_args()
@@ -64,6 +68,8 @@ def main():
     os.makedirs(args.out_dir, exist_ok=True)
 
     print(f'Device: {device}')
+    if args.dataset_path.startswith('/content/drive'):
+        print('[warning] Dataset is on Google Drive path; copy to /content for faster I/O.')
     print('Loading Gym288-skeleton dataset...')
     if args.use_two_stream:
         data, bone_data, labels, flags, _, _ = build_gym288_data_tensors(
@@ -92,11 +98,28 @@ def main():
     if args.use_two_stream:
         B_train = bone_data[train_mask]
         B_val = bone_data[test_mask]
+
+    if args.max_train_samples > 0:
+        n = min(args.max_train_samples, len(X_train))
+        X_train, y_train = X_train[:n], y_train[:n]
+        if B_train is not None:
+            B_train = B_train[:n]
+    if args.max_val_samples > 0:
+        n = min(args.max_val_samples, len(X_val))
+        X_val, y_val = X_val[:n], y_val[:n]
+        if B_val is not None:
+            B_val = B_val[:n]
     print(f'Loaded {len(data)} samples  train={len(X_train)}  test={len(X_val)}')
 
     inferred_classes = infer_num_gym288_classes(args.dataset_path, fallback=GYM288_NUM_CLASSES)
     num_classes = args.num_classes if args.num_classes > 0 else inferred_classes
     print(f'num_classes={num_classes} (inferred={inferred_classes})')
+
+    # This dataset is fully materialized in RAM; extra workers often slow Colab due to IPC overhead.
+    effective_workers = args.num_workers
+    if args.num_workers > 0:
+        print('[info] Using in-memory tensors; forcing num_workers=0 to avoid dataloader overhead.')
+        effective_workers = 0
 
     train_loader = DataLoader(
         PennActionDataset(
@@ -109,7 +132,7 @@ def main():
         batch_size=args.batch_size,
         shuffle=True,
         drop_last=False,
-        num_workers=args.num_workers,
+        num_workers=effective_workers,
         pin_memory=torch.cuda.is_available(),
     )
     val_loader = DataLoader(
@@ -123,10 +146,10 @@ def main():
         batch_size=args.batch_size,
         shuffle=False,
         drop_last=False,
-        num_workers=args.num_workers,
+        num_workers=effective_workers,
         pin_memory=torch.cuda.is_available(),
     )
-    print(f'DataLoader num_workers={args.num_workers}  two_stream={args.use_two_stream}')
+    print(f'DataLoader num_workers={effective_workers}  two_stream={args.use_two_stream}')
 
     model = (
         TwoStream_STGCN(num_classes=num_classes, joint_spec=args.joint_spec_name)
