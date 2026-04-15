@@ -199,3 +199,100 @@ def train_model(
         )
 
     return history
+
+
+def train_model_preloaded(
+    model: nn.Module,
+    train_joint_data: torch.Tensor,
+    train_labels: torch.Tensor,
+    val_loader: DataLoader,
+    num_epochs: int,
+    lr: float,
+    weight_decay: float,
+    device: torch.device,
+    batch_size: int,
+    train_bone_data: torch.Tensor | None = None,
+    scheduler_step: int = 30,
+    scheduler_gamma: float = 0.1,
+) -> Dict[str, List[float]]:
+    """
+    Train when full training tensors are preloaded on the target device.
+
+    Parameters
+    ----------
+    train_joint_data : Tensor (N, C, T, V, M) already on ``device``
+    train_labels     : Tensor (N,) already on ``device``
+    train_bone_data  : optional Tensor (N, C, T, V, M) on ``device``
+    """
+    if batch_size <= 0:
+        raise ValueError('batch_size must be > 0 for preloaded training mode.')
+    if train_joint_data.device != device or train_labels.device != device:
+        raise ValueError('Preloaded tensors must be on the same device passed to train_model_preloaded.')
+    if train_bone_data is not None and train_bone_data.device != device:
+        raise ValueError('train_bone_data must be on the same device passed to train_model_preloaded.')
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    scheduler = torch.optim.lr_scheduler.StepLR(
+        optimizer, step_size=scheduler_step, gamma=scheduler_gamma
+    )
+
+    history: Dict[str, List[float]] = {
+        'train_loss': [], 'val_loss': [],
+        'train_acc': [], 'val_acc': [], 'val_f1': [],
+    }
+
+    num_samples = int(train_labels.size(0))
+    num_batches = max(1, (num_samples + batch_size - 1) // batch_size)
+
+    for epoch in range(num_epochs):
+        model.train()
+        total_loss = 0.0
+        total_correct = 0
+        total_seen = 0
+
+        perm = torch.randperm(num_samples, device=device)
+        progress = tqdm(range(0, num_samples, batch_size), desc=f'Epoch {epoch+1}/{num_epochs} [train-preload]', leave=False)
+        for start in progress:
+            idx = perm[start:start + batch_size]
+            joint_batch = train_joint_data[idx]
+            label_batch = train_labels[idx]
+            bone_batch = train_bone_data[idx] if train_bone_data is not None else None
+
+            optimizer.zero_grad()
+            outputs = model(joint_batch, bone_batch) if bone_batch is not None else model(joint_batch)
+            loss = criterion(outputs, label_batch)
+            loss.backward()
+            optimizer.step()
+
+            total_loss += loss.item()
+            preds = torch.argmax(outputs, dim=1)
+            total_correct += (preds == label_batch).sum().item()
+            total_seen += label_batch.size(0)
+
+        train_loss = total_loss / num_batches
+        train_acc = (total_correct / total_seen) if total_seen > 0 else 0.0
+
+        val_loss, val_acc, val_f1, _, _ = eval_epoch(
+            model,
+            val_loader,
+            criterion,
+            device,
+            show_progress=True,
+            progress_desc=f'Epoch {epoch+1}/{num_epochs} [val]',
+        )
+        scheduler.step()
+
+        history['train_loss'].append(train_loss)
+        history['val_loss'].append(val_loss)
+        history['train_acc'].append(train_acc)
+        history['val_acc'].append(val_acc)
+        history['val_f1'].append(val_f1)
+
+        print(
+            f"Epoch {epoch+1}/{num_epochs}  "
+            f"train_loss={train_loss:.4f}  train_acc={train_acc:.4f}  "
+            f"val_loss={val_loss:.4f}  val_acc={val_acc:.4f}  val_f1={val_f1:.4f}"
+        )
+
+    return history

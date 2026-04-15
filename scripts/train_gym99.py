@@ -39,7 +39,7 @@ from src.experiment_config import apply_overrides, load_experiment_config
 from src.gym99_builder import build_gym99_from_gym288_pickle
 from src.gym99_dataset import build_gym99_data_tensors, infer_num_gym99_classes
 from src.model import Model_STGCN
-from src.train import eval_epoch, train_model
+from src.train import eval_epoch, train_model, train_model_preloaded
 from src.two_stream_stgcn import TwoStream_STGCN
 
 
@@ -71,6 +71,8 @@ def parse_args():
                    help='For quick smoke runs: keep only first N val samples (0 = all).')
     p.add_argument('--use_two_stream', action='store_true',
                    help='Enable 2s-STGCN (joint stream + bone stream with late fusion).')
+    p.add_argument('--train_data_mode', default='standard', choices=['standard', 'preload_vram'],
+                   help='standard: DataLoader on host RAM, preload_vram: preload full train tensors to GPU then train.')
     return p.parse_args()
 
 
@@ -194,22 +196,60 @@ def main():
         num_workers=effective_workers,
         pin_memory=torch.cuda.is_available(),
     )
-    print(f'DataLoader num_workers={effective_workers}  two_stream={args.use_two_stream}')
+    print(
+        f'DataLoader num_workers={effective_workers}  '
+        f'two_stream={args.use_two_stream}  train_data_mode={args.train_data_mode}'
+    )
 
     model = (
         TwoStream_STGCN(num_classes=num_classes, joint_spec=args.joint_spec_name)
         if args.use_two_stream
         else Model_STGCN(num_classes=num_classes, joint_spec=args.joint_spec_name)
     ).to(device)
-    history = train_model(
-        model=model,
-        train_loader=train_loader,
-        val_loader=val_loader,
-        num_epochs=args.epochs,
-        lr=args.lr,
-        weight_decay=args.weight_decay,
-        device=device,
-    )
+    history = None
+    if args.train_data_mode == 'preload_vram':
+        if device.type != 'cuda':
+            print('[warning] preload_vram requested but CUDA is unavailable. Falling back to standard mode.')
+            history = train_model(
+                model=model,
+                train_loader=train_loader,
+                val_loader=val_loader,
+                num_epochs=args.epochs,
+                lr=args.lr,
+                weight_decay=args.weight_decay,
+                device=device,
+            )
+        else:
+            print('[info] Preloading full train tensors to VRAM...')
+            train_joint_data = torch.as_tensor(X_train, dtype=torch.float32, device=device)
+            train_labels = torch.as_tensor(y_train, dtype=torch.long, device=device)
+            train_bone_data = (
+                torch.as_tensor(B_train, dtype=torch.float32, device=device)
+                if (args.use_two_stream and B_train is not None)
+                else None
+            )
+            history = train_model_preloaded(
+                model=model,
+                train_joint_data=train_joint_data,
+                train_labels=train_labels,
+                train_bone_data=train_bone_data,
+                val_loader=val_loader,
+                num_epochs=args.epochs,
+                lr=args.lr,
+                weight_decay=args.weight_decay,
+                device=device,
+                batch_size=args.batch_size,
+            )
+    else:
+        history = train_model(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            num_epochs=args.epochs,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+            device=device,
+        )
 
     weights_name = 'stgcn_gym99_coco18_2s.pth' if args.use_two_stream else 'stgcn_gym99_coco18.pth'
     weights_path = os.path.join(args.out_dir, weights_name)
