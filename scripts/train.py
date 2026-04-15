@@ -34,6 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from src.config import EXERCISE_CLASSES
 from src.dataset import build_data_tensors, PennActionDataset
 from src.model import Model_STGCN
+from src.two_stream_stgcn import TwoStream_STGCN
 from src.train import train_model, eval_epoch
 from src.visualize import plot_training_curves, plot_confusion_matrix, plot_per_class_f1
 
@@ -52,6 +53,8 @@ def parse_args():
     p.add_argument('--weight_decay', type=float, default=1e-4)
     p.add_argument('--num_workers', '--num_wokers', dest='num_workers', type=int, default=0,
                    help='Number of DataLoader workers for both train/val (supports alias --num_wokers).')
+    p.add_argument('--use_two_stream', action='store_true',
+                   help='Enable 2s-STGCN (joint stream + bone stream with late fusion).')
     return p.parse_args()
 
 
@@ -63,32 +66,46 @@ def main():
 
     # ── Data (official subject-isolated split via Penn Action train flag) ──
     print('Loading data...')
-    data, labels, flags, _, _ = build_data_tensors(
-        labels_dir=args.labels_dir,
-        dataset_format=args.dataset_format,
-    )
+    if args.use_two_stream:
+        data, bone_data, labels, flags, _, _ = build_data_tensors(
+            labels_dir=args.labels_dir,
+            dataset_format=args.dataset_format,
+            return_bone_data=True,
+        )
+    else:
+        data, labels, flags, _, _ = build_data_tensors(
+            labels_dir=args.labels_dir,
+            dataset_format=args.dataset_format,
+        )
     print(f'  Loaded {len(data)} samples  '
           f'(train flag=1: {(flags==1).sum()}  test flag=0: {(flags==0).sum()})')
 
     X_train, y_train = data[flags == 1], labels[flags == 1]
     X_val,   y_val   = data[flags == 0], labels[flags == 0]
+    B_train = B_val = None
+    if args.use_two_stream:
+        B_train = bone_data[flags == 1]
+        B_val = bone_data[flags == 0]
 
     train_loader = DataLoader(
-        PennActionDataset(X_train, y_train),
+        PennActionDataset(X_train, y_train, bone_data=B_train, include_bone=args.use_two_stream),
         batch_size=args.batch_size, shuffle=True, drop_last=False,
         num_workers=args.num_workers,
         pin_memory=torch.cuda.is_available(),
     )
     val_loader = DataLoader(
-        PennActionDataset(X_val, y_val),
+        PennActionDataset(X_val, y_val, bone_data=B_val, include_bone=args.use_two_stream),
         batch_size=args.batch_size, shuffle=False, drop_last=False,
         num_workers=args.num_workers,
         pin_memory=torch.cuda.is_available(),
     )
-    print(f'  Train: {len(X_train)}  Val: {len(X_val)}  num_workers={args.num_workers}')
+    print(
+        f'  Train: {len(X_train)}  Val: {len(X_val)}  '
+        f'num_workers={args.num_workers}  two_stream={args.use_two_stream}'
+    )
 
     # ── Model ────────────────────────────────────────────────────────────
-    model = Model_STGCN().to(device)
+    model = (TwoStream_STGCN(num_classes=len(EXERCISE_CLASSES)) if args.use_two_stream else Model_STGCN()).to(device)
 
     # ── Train ────────────────────────────────────────────────────────────
     history = train_model(
@@ -100,7 +117,8 @@ def main():
     )
 
     # ── Save weights ─────────────────────────────────────────────────────
-    weights_path = os.path.join(args.out_dir, 'stgcn_penn_action.pth')
+    weights_name = 'stgcn_penn_action_2s.pth' if args.use_two_stream else 'stgcn_penn_action.pth'
+    weights_path = os.path.join(args.out_dir, weights_name)
     torch.save(model.state_dict(), weights_path)
     print(f'Model saved to {weights_path}')
 

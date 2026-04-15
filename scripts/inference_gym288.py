@@ -29,6 +29,7 @@ from src.config import GYM288_NUM_CLASSES
 from src.dataset import PennActionDataset
 from src.gym288_dataset import build_gym288_data_tensors, infer_num_gym288_classes
 from src.model import Model_STGCN
+from src.two_stream_stgcn import TwoStream_STGCN
 
 
 def parse_args():
@@ -42,6 +43,8 @@ def parse_args():
     p.add_argument('--topk', type=int, default=5)
     p.add_argument('--num_workers', '--num_wokers', dest='num_workers', type=int, default=0,
                    help='Number of DataLoader workers (supports alias --num_wokers).')
+    p.add_argument('--use_two_stream', action='store_true',
+                   help='Enable 2s-STGCN inference (requires two-stream-trained weights).')
     return p.parse_args()
 
 
@@ -54,10 +57,15 @@ def _evaluate_topk(model, loader, device, topk: int = 5):
 
     with torch.no_grad():
         for batch_data, batch_labels in tqdm(loader, desc='Inference [test]', leave=False):
-            batch_data = batch_data.to(device)
+            if isinstance(batch_data, (tuple, list)) and len(batch_data) == 2:
+                joint_data = batch_data[0].to(device)
+                bone_data = batch_data[1].to(device)
+            else:
+                joint_data = batch_data.to(device)
+                bone_data = None
             batch_labels = batch_labels.to(device)
 
-            logits = model(batch_data)
+            logits = model(joint_data, bone_data) if bone_data is not None else model(joint_data)
             loss = criterion(logits, batch_labels)
             total_loss += loss.item()
 
@@ -88,31 +96,48 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     os.makedirs(args.out_dir, exist_ok=True)
 
-    data, labels, flags, _, video_ids = build_gym288_data_tensors(
-        dataset_path=args.dataset_path,
-        split='test',
-        keep_unknown_split=False,
-    )
+    if args.use_two_stream:
+        data, bone_data, labels, flags, _, video_ids = build_gym288_data_tensors(
+            dataset_path=args.dataset_path,
+            split='test',
+            keep_unknown_split=False,
+            return_bone_data=True,
+        )
+    else:
+        data, labels, flags, _, video_ids = build_gym288_data_tensors(
+            dataset_path=args.dataset_path,
+            split='test',
+            keep_unknown_split=False,
+        )
     if len(data) == 0:
         raise RuntimeError('No test samples found in Gym288 dataset.')
 
     inferred_classes = infer_num_gym288_classes(args.dataset_path, fallback=GYM288_NUM_CLASSES)
     num_classes = args.num_classes if args.num_classes > 0 else inferred_classes
 
-    model = Model_STGCN(num_classes=num_classes).to(device)
+    model = (
+        TwoStream_STGCN(num_classes=num_classes)
+        if args.use_two_stream
+        else Model_STGCN(num_classes=num_classes)
+    ).to(device)
     state_dict = torch.load(args.weights, map_location=device)
     model.load_state_dict(state_dict)
     model.eval()
 
     loader = DataLoader(
-        PennActionDataset(data, labels),
+        PennActionDataset(
+            data,
+            labels,
+            bone_data=bone_data if args.use_two_stream else None,
+            include_bone=args.use_two_stream,
+        ),
         batch_size=args.batch_size,
         shuffle=False,
         drop_last=False,
         num_workers=args.num_workers,
         pin_memory=torch.cuda.is_available(),
     )
-    print(f'DataLoader num_workers={args.num_workers}')
+    print(f'DataLoader num_workers={args.num_workers}  two_stream={args.use_two_stream}')
 
     loss, top1, topk_acc, macro_f1, preds, gt = _evaluate_topk(model, loader, device, topk=args.topk)
 

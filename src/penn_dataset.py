@@ -11,8 +11,8 @@ import numpy as np
 import pandas as pd
 import scipy.io
 
-from src.config import CLASS_TO_ID, EXERCISE_CLASSES, TARGET_FRAMES
-from src.skeleton_utils import to_stgcn_input_from_penn13
+from src.config import CLASS_TO_ID, EXERCISE_CLASSES, PENN_BONE_PAIRS_14, TARGET_FRAMES
+from src.skeleton_utils import calculate_bone_data, to_stgcn_input_from_penn13
 
 
 def load_mat_index(labels_dir: str) -> pd.DataFrame:
@@ -39,6 +39,8 @@ def build_penn_data_tensors(
     exercise_classes: List[str] = EXERCISE_CLASSES,
     class_to_id: Dict[str, int] = CLASS_TO_ID,
     target_frames: int = TARGET_FRAMES,
+    return_bone_data: bool = False,
+    bone_pairs: List[Tuple[int, int]] = PENN_BONE_PAIRS_14,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, List[int], List[str]]:
     """
     Load Penn Action .mat files into ST-GCN tensors.
@@ -51,7 +53,7 @@ def build_penn_data_tensors(
     raw_frame_counts : list[int]
     video_ids        : list[str]
     """
-    all_data, all_labels, all_flags, raw_frame_counts = [], [], [], []
+    all_data, all_bone_data, all_labels, all_flags, raw_frame_counts = [], [], [], [], []
     all_video_ids, all_actions = [], []
 
     for mat_path in sorted(glob.glob(os.path.join(labels_dir, '*.mat'))):
@@ -72,6 +74,8 @@ def build_penn_data_tensors(
 
             tensor = to_stgcn_input_from_penn13(kpts13, target_frames)
             all_data.append(tensor)
+            if return_bone_data:
+                all_bone_data.append(calculate_bone_data(tensor, bone_pairs).astype(np.float32))
             all_labels.append(class_to_id[action])
             all_flags.append(train_flag)
             all_video_ids.append(os.path.splitext(os.path.basename(mat_path))[0])
@@ -95,5 +99,9 @@ def build_penn_data_tensors(
             n_test = max(1, int(round(len(idx) * 0.3)))
             for i in idx[-n_test:]:
                 flags[i] = 0
+
+    if return_bone_data:
+        bone_data = np.array(all_bone_data, dtype=np.float32)
+        return data, bone_data, labels, flags, raw_frame_counts, all_video_ids
 
     return data, labels, flags, raw_frame_counts, all_video_ids

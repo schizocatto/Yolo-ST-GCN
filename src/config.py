@@ -58,6 +58,10 @@ PENN_BONES_13 = [
 PENN_BONES_VIRTUAL = [(1, 13), (2, 13), (7, 13), (8, 13)]
 PENN_BONES_14 = PENN_BONES_13 + PENN_BONES_VIRTUAL
 
+# Directed parent->child pairs for bone-stream construction.
+# Bone feature at each child joint is (child - parent).
+PENN_BONE_PAIRS_14 = PENN_BONES_14
+
 # COCO (17-keypoint) → Penn Action (13-keypoint) index mapping
 # Drops COCO indices 1-4 (eyes/ears); maps [0, 5..16] to Penn 0..12
 COCO_TO_PENN_IDX = [0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]

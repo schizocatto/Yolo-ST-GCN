@@ -42,11 +42,16 @@ def train_epoch(
         iterator = tqdm(loader, desc=progress_desc, leave=False)
 
     for batch_data, batch_labels in iterator:
-        batch_data   = batch_data.to(device)
+        if isinstance(batch_data, (tuple, list)) and len(batch_data) == 2:
+            joint_data = batch_data[0].to(device)
+            bone_data = batch_data[1].to(device)
+        else:
+            joint_data = batch_data.to(device)
+            bone_data = None
         batch_labels = batch_labels.to(device)
 
         optimizer.zero_grad()
-        outputs = model(batch_data)
+        outputs = model(joint_data, bone_data) if bone_data is not None else model(joint_data)
         loss    = criterion(outputs, batch_labels)
         loss.backward()
         optimizer.step()
@@ -91,10 +96,15 @@ def eval_epoch(
 
     with torch.no_grad():
         for batch_data, batch_labels in iterator:
-            batch_data   = batch_data.to(device)
+            if isinstance(batch_data, (tuple, list)) and len(batch_data) == 2:
+                joint_data = batch_data[0].to(device)
+                bone_data = batch_data[1].to(device)
+            else:
+                joint_data = batch_data.to(device)
+                bone_data = None
             batch_labels = batch_labels.to(device)
 
-            outputs  = model(batch_data)
+            outputs  = model(joint_data, bone_data) if bone_data is not None else model(joint_data)
             loss     = criterion(outputs, batch_labels)
             total_loss += loss.item()
 

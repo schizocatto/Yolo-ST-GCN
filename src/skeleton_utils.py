@@ -3,9 +3,10 @@ skeleton_utils.py
 Shared keypoint preprocessing helpers for Penn/COCO data sources.
 """
 
-from typing import Tuple
+from typing import List, Tuple
 
 import numpy as np
+import torch
 
 from src.config import COCO_TO_PENN_IDX, TARGET_FRAMES
 
@@ -98,3 +99,45 @@ def ensure_t_j_2(kpts: np.ndarray, expected_joints: int) -> np.ndarray:
     raise ValueError(
         f'Unsupported keypoints shape {arr.shape}; could not coerce to (T, {expected_joints}, 2)'
     )
+
+
+def calculate_bone_data(
+    joint_data,
+    bone_pairs: List[Tuple[int, int]],
+):
+    """
+    Build bone tensor from joint tensor via (child - parent) for each bone pair.
+
+    Supported shapes:
+    - (C, T, V, M)
+    - (N, C, T, V, M)
+
+    Returns tensor/array with same shape and dtype as input.
+    """
+    if torch.is_tensor(joint_data):
+        bone_data = torch.zeros_like(joint_data)
+        if joint_data.dim() == 4:
+            for parent_idx, child_idx in bone_pairs:
+                bone_data[:, :, child_idx, :] = (
+                    joint_data[:, :, child_idx, :] - joint_data[:, :, parent_idx, :]
+                )
+            return bone_data
+        if joint_data.dim() == 5:
+            for parent_idx, child_idx in bone_pairs:
+                bone_data[:, :, :, child_idx, :] = (
+                    joint_data[:, :, :, child_idx, :] - joint_data[:, :, :, parent_idx, :]
+                )
+            return bone_data
+        raise ValueError(f'Unsupported torch joint_data shape: {tuple(joint_data.shape)}')
+
+    arr = np.asarray(joint_data)
+    bone_data = np.zeros_like(arr)
+    if arr.ndim == 4:
+        for parent_idx, child_idx in bone_pairs:
+            bone_data[:, :, child_idx, :] = arr[:, :, child_idx, :] - arr[:, :, parent_idx, :]
+        return bone_data
+    if arr.ndim == 5:
+        for parent_idx, child_idx in bone_pairs:
+            bone_data[:, :, :, child_idx, :] = arr[:, :, :, child_idx, :] - arr[:, :, :, parent_idx, :]
+        return bone_data
+    raise ValueError(f'Unsupported numpy joint_data shape: {arr.shape}')

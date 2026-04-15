@@ -18,12 +18,12 @@ The dataset is expected to be a pickle file containing:
 """
 
 import pickle
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 
-from src.config import TARGET_FRAMES
-from src.skeleton_utils import ensure_t_j_2, to_stgcn_input_from_coco17
+from src.config import PENN_BONE_PAIRS_14, TARGET_FRAMES
+from src.skeleton_utils import calculate_bone_data, ensure_t_j_2, to_stgcn_input_from_coco17
 
 
 def _extract_coco17_xy(annotation: Dict) -> np.ndarray:
@@ -48,6 +48,8 @@ def build_gym288_data_tensors(
     target_frames: int = TARGET_FRAMES,
     split: str = 'all',
     keep_unknown_split: bool = False,
+    return_bone_data: bool = False,
+    bone_pairs: List[Tuple[int, int]] = PENN_BONE_PAIRS_14,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, List[int], List[str]]:
     """
     Build ST-GCN tensors from Gym288-skeleton pickle.
@@ -80,6 +82,7 @@ def build_gym288_data_tensors(
     annotations = payload.get('annotations', [])
 
     all_data: List[np.ndarray] = []
+    all_bone_data: List[np.ndarray] = []
     all_labels: List[int] = []
     all_flags: List[int] = []
     raw_frame_counts: List[int] = []
@@ -109,6 +112,8 @@ def build_gym288_data_tensors(
             tensor = to_stgcn_input_from_coco17(kpts17, target_frames)
 
             all_data.append(tensor)
+            if return_bone_data:
+                all_bone_data.append(calculate_bone_data(tensor, bone_pairs).astype(np.float32))
             all_labels.append(label)
             all_flags.append(flag)
             all_video_ids.append(video_id)
@@ -120,6 +125,10 @@ def build_gym288_data_tensors(
     data = np.array(all_data, dtype=np.float32)
     labels = np.array(all_labels, dtype=np.int64)
     flags = np.array(all_flags, dtype=np.int8)
+    if return_bone_data:
+        bone_data = np.array(all_bone_data, dtype=np.float32)
+        return data, bone_data, labels, flags, raw_frame_counts, all_video_ids
+
     return data, labels, flags, raw_frame_counts, all_video_ids
 
 

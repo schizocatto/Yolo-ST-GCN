@@ -29,6 +29,7 @@ from src.dataset import PennActionDataset
 from src.gym288_dataset import build_gym288_data_tensors, infer_num_gym288_classes
 from src.model import Model_STGCN
 from src.train import eval_epoch, train_model
+from src.two_stream_stgcn import TwoStream_STGCN
 
 
 def parse_args():
@@ -43,6 +44,8 @@ def parse_args():
                    help='Override class count. 0 = infer from dataset labels')
     p.add_argument('--num_workers', '--num_wokers', dest='num_workers', type=int, default=0,
                    help='Number of DataLoader workers for both train/val (supports alias --num_wokers).')
+    p.add_argument('--use_two_stream', action='store_true',
+                   help='Enable 2s-STGCN (joint stream + bone stream with late fusion).')
     return p.parse_args()
 
 
@@ -53,11 +56,19 @@ def main():
 
     print(f'Device: {device}')
     print('Loading Gym288-skeleton dataset...')
-    data, labels, flags, _, _ = build_gym288_data_tensors(
-        dataset_path=args.dataset_path,
-        split='all',
-        keep_unknown_split=False,
-    )
+    if args.use_two_stream:
+        data, bone_data, labels, flags, _, _ = build_gym288_data_tensors(
+            dataset_path=args.dataset_path,
+            split='all',
+            keep_unknown_split=False,
+            return_bone_data=True,
+        )
+    else:
+        data, labels, flags, _, _ = build_gym288_data_tensors(
+            dataset_path=args.dataset_path,
+            split='all',
+            keep_unknown_split=False,
+        )
 
     train_mask = flags == 1
     test_mask = flags == 0
@@ -66,6 +77,10 @@ def main():
 
     X_train, y_train = data[train_mask], labels[train_mask]
     X_val, y_val = data[test_mask], labels[test_mask]
+    B_train = B_val = None
+    if args.use_two_stream:
+        B_train = bone_data[train_mask]
+        B_val = bone_data[test_mask]
     print(f'Loaded {len(data)} samples  train={len(X_train)}  test={len(X_val)}')
 
     inferred_classes = infer_num_gym288_classes(args.dataset_path, fallback=GYM288_NUM_CLASSES)
@@ -73,7 +88,7 @@ def main():
     print(f'num_classes={num_classes} (inferred={inferred_classes})')
 
     train_loader = DataLoader(
-        PennActionDataset(X_train, y_train),
+        PennActionDataset(X_train, y_train, bone_data=B_train, include_bone=args.use_two_stream),
         batch_size=args.batch_size,
         shuffle=True,
         drop_last=False,
@@ -81,16 +96,20 @@ def main():
         pin_memory=torch.cuda.is_available(),
     )
     val_loader = DataLoader(
-        PennActionDataset(X_val, y_val),
+        PennActionDataset(X_val, y_val, bone_data=B_val, include_bone=args.use_two_stream),
         batch_size=args.batch_size,
         shuffle=False,
         drop_last=False,
         num_workers=args.num_workers,
         pin_memory=torch.cuda.is_available(),
     )
-    print(f'DataLoader num_workers={args.num_workers}')
+    print(f'DataLoader num_workers={args.num_workers}  two_stream={args.use_two_stream}')
 
-    model = Model_STGCN(num_classes=num_classes).to(device)
+    model = (
+        TwoStream_STGCN(num_classes=num_classes)
+        if args.use_two_stream
+        else Model_STGCN(num_classes=num_classes)
+    ).to(device)
     history = train_model(
         model=model,
         train_loader=train_loader,
@@ -101,7 +120,8 @@ def main():
         device=device,
     )
 
-    weights_path = os.path.join(args.out_dir, 'stgcn_gym288.pth')
+    weights_name = 'stgcn_gym288_2s.pth' if args.use_two_stream else 'stgcn_gym288.pth'
+    weights_path = os.path.join(args.out_dir, weights_name)
     torch.save(model.state_dict(), weights_path)
     print(f'Saved weights: {weights_path}')
 
