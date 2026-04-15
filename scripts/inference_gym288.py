@@ -1,0 +1,139 @@
+"""
+scripts/inference_gym288.py
+Evaluate ST-GCN inference on Gym288-skeleton test split.
+
+Usage
+-----
+python scripts/inference_gym288.py \
+    --dataset_path /path/to/gym288_skeleton.pkl \
+    --weights outputs/gym288/stgcn_gym288.pth \
+    --out_dir outputs/gym288
+"""
+
+import argparse
+import json
+import os
+import sys
+
+import numpy as np
+import torch
+import torch.nn as nn
+from sklearn.metrics import accuracy_score, f1_score
+from torch.utils.data import DataLoader
+
+# Allow running from repo root without installing the package
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+from src.config import GYM288_NUM_CLASSES
+from src.dataset import PennActionDataset
+from src.gym288_dataset import build_gym288_data_tensors, infer_num_gym288_classes
+from src.model import Model_STGCN
+
+
+def parse_args():
+    p = argparse.ArgumentParser(description='Inference/Evaluation on Gym288-skeleton test split')
+    p.add_argument('--dataset_path', required=True, help='Path to gym288_skeleton.pkl')
+    p.add_argument('--weights', required=True, help='Path to trained ST-GCN weights (.pth)')
+    p.add_argument('--out_dir', default='outputs/gym288', help='Output directory')
+    p.add_argument('--batch_size', type=int, default=64)
+    p.add_argument('--num_classes', type=int, default=0,
+                   help='Override class count. 0 = infer from dataset labels')
+    p.add_argument('--topk', type=int, default=5)
+    return p.parse_args()
+
+
+def _evaluate_topk(model, loader, device, topk: int = 5):
+    model.eval()
+    all_logits = []
+    all_labels = []
+    criterion = nn.CrossEntropyLoss()
+    total_loss = 0.0
+
+    with torch.no_grad():
+        for batch_data, batch_labels in loader:
+            batch_data = batch_data.to(device)
+            batch_labels = batch_labels.to(device)
+
+            logits = model(batch_data)
+            loss = criterion(logits, batch_labels)
+            total_loss += loss.item()
+
+            all_logits.append(logits.cpu().numpy())
+            all_labels.append(batch_labels.cpu().numpy())
+
+    if not all_labels:
+        return 0.0, 0.0, 0.0, [], []
+
+    logits_np = np.concatenate(all_logits, axis=0)
+    labels_np = np.concatenate(all_labels, axis=0)
+
+    preds_top1 = np.argmax(logits_np, axis=1)
+    top1 = accuracy_score(labels_np, preds_top1)
+    macro_f1 = f1_score(labels_np, preds_top1, average='macro', zero_division=0)
+
+    k = max(1, int(topk))
+    topk_idx = np.argpartition(logits_np, -k, axis=1)[:, -k:]
+    topk_hit = np.array([labels_np[i] in topk_idx[i] for i in range(len(labels_np))], dtype=np.float32)
+    topk_acc = float(topk_hit.mean()) if len(topk_hit) > 0 else 0.0
+
+    avg_loss = total_loss / len(loader)
+    return avg_loss, float(top1), float(topk_acc), float(macro_f1), preds_top1.tolist(), labels_np.tolist()
+
+
+def main():
+    args = parse_args()
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    os.makedirs(args.out_dir, exist_ok=True)
+
+    data, labels, flags, _, video_ids = build_gym288_data_tensors(
+        dataset_path=args.dataset_path,
+        split='test',
+        keep_unknown_split=False,
+    )
+    if len(data) == 0:
+        raise RuntimeError('No test samples found in Gym288 dataset.')
+
+    inferred_classes = infer_num_gym288_classes(args.dataset_path, fallback=GYM288_NUM_CLASSES)
+    num_classes = args.num_classes if args.num_classes > 0 else inferred_classes
+
+    model = Model_STGCN(num_classes=num_classes).to(device)
+    state_dict = torch.load(args.weights, map_location=device)
+    model.load_state_dict(state_dict)
+    model.eval()
+
+    loader = DataLoader(
+        PennActionDataset(data, labels),
+        batch_size=args.batch_size,
+        shuffle=False,
+        drop_last=False,
+    )
+
+    loss, top1, topk_acc, macro_f1, preds, gt = _evaluate_topk(model, loader, device, topk=args.topk)
+
+    print(f'Test samples    : {len(data)}')
+    print(f'Loss            : {loss:.4f}')
+    print(f'Top-1 accuracy  : {top1:.4f}')
+    print(f'Top-{args.topk} accuracy: {topk_acc:.4f}')
+    print(f'Macro-F1        : {macro_f1:.4f}')
+
+    metrics = {
+        'num_test': int(len(data)),
+        'num_classes': int(num_classes),
+        'loss': float(loss),
+        'top1_accuracy': float(top1),
+        f'top{args.topk}_accuracy': float(topk_acc),
+        'macro_f1': float(macro_f1),
+    }
+    with open(os.path.join(args.out_dir, 'metrics_inference_gym288.json'), 'w', encoding='utf-8') as f:
+        json.dump(metrics, f, indent=2)
+
+    preds_dump = [
+        {'video_id': vid, 'gt': int(t), 'pred_top1': int(p)}
+        for vid, t, p in zip(video_ids, gt, preds)
+    ]
+    with open(os.path.join(args.out_dir, 'predictions_test_top1.json'), 'w', encoding='utf-8') as f:
+        json.dump(preds_dump, f, indent=2)
+
+
+if __name__ == '__main__':
+    main()

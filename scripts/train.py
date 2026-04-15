@@ -41,7 +41,9 @@ from src.visualize import plot_training_curves, plot_confusion_matrix, plot_per_
 def parse_args():
     p = argparse.ArgumentParser(description='Train ST-GCN on Penn Action')
     p.add_argument('--labels_dir', required=True,
-                   help='Path to Penn Action labels/ directory')
+                   help='Path to dataset labels directory (Penn .mat or COCO .npz)')
+    p.add_argument('--dataset_format', default='penn', choices=['penn', 'coco'],
+                   help='Input dataset format. COCO will be remapped to Penn layout.')
     p.add_argument('--out_dir',    default='outputs',
                    help='Output directory for weights and plots')
     p.add_argument('--epochs',     type=int,   default=50)
@@ -59,7 +61,10 @@ def main():
 
     # ── Data (official subject-isolated split via Penn Action train flag) ──
     print('Loading data...')
-    data, labels, flags, _, _ = build_data_tensors(args.labels_dir)
+    data, labels, flags, _, _ = build_data_tensors(
+        labels_dir=args.labels_dir,
+        dataset_format=args.dataset_format,
+    )
     print(f'  Loaded {len(data)} samples  '
           f'(train flag=1: {(flags==1).sum()}  test flag=0: {(flags==0).sum()})')
 
