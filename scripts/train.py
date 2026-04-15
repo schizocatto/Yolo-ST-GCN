@@ -32,7 +32,9 @@ from torch.utils.data import DataLoader
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.config import EXERCISE_CLASSES
+from src.checkpointing import save_checkpoint
 from src.dataset import build_data_tensors, PennActionDataset
+from src.experiment_config import apply_overrides, load_experiment_config
 from src.model import Model_STGCN
 from src.two_stream_stgcn import TwoStream_STGCN
 from src.train import train_model, eval_epoch
@@ -41,10 +43,14 @@ from src.visualize import plot_training_curves, plot_confusion_matrix, plot_per_
 
 def parse_args():
     p = argparse.ArgumentParser(description='Train ST-GCN on Penn Action')
+    p.add_argument('--experiment_config', default='',
+                   help='Optional JSON config for frequent experiment updates.')
     p.add_argument('--labels_dir', required=True,
                    help='Path to dataset labels directory (Penn .mat or COCO .npz)')
     p.add_argument('--dataset_format', default='penn', choices=['penn', 'coco'],
                    help='Input dataset format. COCO will be remapped to Penn layout.')
+    p.add_argument('--joint_spec_name', default='penn14', choices=['penn14', 'coco18'],
+                   help='Target joint layout for model input.')
     p.add_argument('--out_dir',    default='outputs',
                    help='Output directory for weights and plots')
     p.add_argument('--epochs',     type=int,   default=50)
@@ -60,6 +66,9 @@ def parse_args():
 
 def main():
     args   = parse_args()
+    if args.experiment_config:
+        cfg = load_experiment_config(args.experiment_config)
+        args = apply_overrides(args, cfg, sys.argv[1:])
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Device: {device}')
     os.makedirs(args.out_dir, exist_ok=True)
@@ -70,12 +79,14 @@ def main():
         data, bone_data, labels, flags, _, _ = build_data_tensors(
             labels_dir=args.labels_dir,
             dataset_format=args.dataset_format,
+            joint_spec_name=args.joint_spec_name,
             return_bone_data=True,
         )
     else:
         data, labels, flags, _, _ = build_data_tensors(
             labels_dir=args.labels_dir,
             dataset_format=args.dataset_format,
+            joint_spec_name=args.joint_spec_name,
         )
     print(f'  Loaded {len(data)} samples  '
           f'(train flag=1: {(flags==1).sum()}  test flag=0: {(flags==0).sum()})')
@@ -88,13 +99,25 @@ def main():
         B_val = bone_data[flags == 0]
 
     train_loader = DataLoader(
-        PennActionDataset(X_train, y_train, bone_data=B_train, include_bone=args.use_two_stream),
+        PennActionDataset(
+            X_train,
+            y_train,
+            bone_data=B_train,
+            include_bone=args.use_two_stream,
+            joint_spec_name=args.joint_spec_name,
+        ),
         batch_size=args.batch_size, shuffle=True, drop_last=False,
         num_workers=args.num_workers,
         pin_memory=torch.cuda.is_available(),
     )
     val_loader = DataLoader(
-        PennActionDataset(X_val, y_val, bone_data=B_val, include_bone=args.use_two_stream),
+        PennActionDataset(
+            X_val,
+            y_val,
+            bone_data=B_val,
+            include_bone=args.use_two_stream,
+            joint_spec_name=args.joint_spec_name,
+        ),
         batch_size=args.batch_size, shuffle=False, drop_last=False,
         num_workers=args.num_workers,
         pin_memory=torch.cuda.is_available(),
@@ -105,7 +128,11 @@ def main():
     )
 
     # ── Model ────────────────────────────────────────────────────────────
-    model = (TwoStream_STGCN(num_classes=len(EXERCISE_CLASSES)) if args.use_two_stream else Model_STGCN()).to(device)
+    model = (
+        TwoStream_STGCN(num_classes=len(EXERCISE_CLASSES), joint_spec=args.joint_spec_name)
+        if args.use_two_stream
+        else Model_STGCN(joint_spec=args.joint_spec_name)
+    ).to(device)
 
     # ── Train ────────────────────────────────────────────────────────────
     history = train_model(
@@ -119,7 +146,16 @@ def main():
     # ── Save weights ─────────────────────────────────────────────────────
     weights_name = 'stgcn_penn_action_2s.pth' if args.use_two_stream else 'stgcn_penn_action.pth'
     weights_path = os.path.join(args.out_dir, weights_name)
-    torch.save(model.state_dict(), weights_path)
+    save_checkpoint(
+        weights_path,
+        model,
+        metadata={
+            'joint_spec_name': args.joint_spec_name,
+            'use_two_stream': bool(args.use_two_stream),
+            'dataset_format': args.dataset_format,
+            'num_classes': len(EXERCISE_CLASSES),
+        },
+    )
     print(f'Model saved to {weights_path}')
 
     # ── Final evaluation ─────────────────────────────────────────────────

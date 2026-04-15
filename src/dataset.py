@@ -31,6 +31,7 @@ from src.skeleton_utils import (
     to_stgcn_input_from_coco17,
     to_stgcn_input_from_penn13,
 )
+from src.joint_specs import get_joint_spec
 
 
 def build_data_tensors(
@@ -39,6 +40,7 @@ def build_data_tensors(
     exercise_classes: List[str] = EXERCISE_CLASSES,
     class_to_id: Dict[str, int] = CLASS_TO_ID,
     target_frames: int = TARGET_FRAMES,
+    joint_spec_name: str = 'penn14',
     return_bone_data: bool = False,
     bone_pairs: List[Tuple[int, int]] = PENN_BONE_PAIRS_14,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, List[int], List[str]]:
@@ -63,6 +65,9 @@ def build_data_tensors(
     video_ids        : list[str]
     """
     fmt = dataset_format.strip().lower()
+    spec = get_joint_spec(joint_spec_name)
+    if bone_pairs is PENN_BONE_PAIRS_14:
+        bone_pairs = spec.bone_pairs
     if fmt == 'penn':
         return build_penn_data_tensors(
             labels_dir=labels_dir,
@@ -85,6 +90,7 @@ def build_data_tensors(
         return build_gym288_data_tensors(
             dataset_path=labels_dir,
             target_frames=target_frames,
+            joint_spec_name=joint_spec_name,
             split='all',
             keep_unknown_split=False,
             return_bone_data=return_bone_data,
@@ -94,6 +100,7 @@ def build_data_tensors(
         return build_gym99_data_tensors(
             dataset_path=labels_dir,
             target_frames=target_frames,
+            joint_spec_name=joint_spec_name,
             split='all',
             keep_unknown_split=False,
             return_bone_data=return_bone_data,
@@ -121,12 +128,13 @@ class PennActionDataset(Dataset):
         labels: np.ndarray,
         bone_data: Optional[np.ndarray] = None,
         include_bone: bool = False,
-        bone_pairs: List[Tuple[int, int]] = PENN_BONE_PAIRS_14,
+        bone_pairs: Optional[List[Tuple[int, int]]] = None,
+        joint_spec_name: str = 'penn14',
     ):
         self.data = torch.FloatTensor(data)
         self.labels = torch.LongTensor(labels)
         self.include_bone = include_bone
-        self.bone_pairs = bone_pairs
+        self.bone_pairs = bone_pairs or get_joint_spec(joint_spec_name).bone_pairs
 
         self.bone_data: Optional[torch.Tensor] = None
         if include_bone:

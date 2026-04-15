@@ -21,17 +21,18 @@ The adjacency tensor A has shape (3, 14, 14):
 import numpy as np
 import torch
 
-from src.config import PENN_BONES_14
+from src.joint_specs import JointSpec, get_joint_spec
 
 
-class Graph_PennAction_14Nodes:
-    """Builds the normalised spatial-partition adjacency tensor used by ST-GCN."""
+class GraphSkeleton:
+    """Build normalised spatial-partition adjacency tensor for a named joint spec."""
 
-    num_node    = 14
-    center_node = 13
-    edges       = PENN_BONES_14
-
-    def __init__(self):
+    def __init__(self, joint_spec: str = 'penn14'):
+        spec: JointSpec = get_joint_spec(joint_spec)
+        self.spec = spec
+        self.num_node = spec.num_joints
+        self.center_node = spec.center_joint
+        self.edges = spec.bone_pairs
         self.A = self._build_A()
 
     # ------------------------------------------------------------------
@@ -69,3 +70,10 @@ class Graph_PennAction_14Nodes:
             A[k]    = A[k] * D_inv[:, np.newaxis]
 
         return torch.tensor(A, dtype=torch.float32)
+
+
+class Graph_PennAction_14Nodes(GraphSkeleton):
+    """Backward-compatible alias for legacy code paths."""
+
+    def __init__(self):
+        super().__init__(joint_spec='penn14')

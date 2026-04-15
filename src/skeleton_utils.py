@@ -9,6 +9,7 @@ import numpy as np
 import torch
 
 from src.config import COCO_TO_PENN_IDX, TARGET_FRAMES
+from src.joint_specs import JointSpec, get_joint_spec
 
 
 def add_virtual_center_joint(kpts: np.ndarray) -> np.ndarray:
@@ -20,6 +21,12 @@ def add_virtual_center_joint(kpts: np.ndarray) -> np.ndarray:
     kpts : (T, 13, 2)
     """
     center = (kpts[:, 1, :] + kpts[:, 2, :] + kpts[:, 7, :] + kpts[:, 8, :]) / 4.0
+    return np.concatenate((kpts, center[:, np.newaxis, :]), axis=1)
+
+
+def add_virtual_center_joint_by_indices(kpts: np.ndarray, parent_indices: List[int]) -> np.ndarray:
+    """Append a virtual center as the mean of provided parent joints."""
+    center = np.mean(kpts[:, parent_indices, :], axis=1)
     return np.concatenate((kpts, center[:, np.newaxis, :]), axis=1)
 
 
@@ -47,6 +54,25 @@ def remap_coco17_to_penn13(coco_kpts: np.ndarray) -> np.ndarray:
     coco_kpts : (T, 17, 2)
     """
     return coco_kpts[:, COCO_TO_PENN_IDX, :]
+
+
+def remap_coco17_to_layout(coco_kpts: np.ndarray, spec: JointSpec) -> np.ndarray:
+    """Remap COCO17 sequence to the target layout before optional virtual center append."""
+    return coco_kpts[:, spec.coco_to_layout_idx, :]
+
+
+def to_stgcn_input_from_coco17_with_spec(
+    coco_kpts: np.ndarray,
+    spec_name: str,
+    target_frames: int = TARGET_FRAMES,
+) -> np.ndarray:
+    """Convert (T,17,2) COCO keypoints into (2,T,V,1) using a named joint spec."""
+    spec = get_joint_spec(spec_name)
+    kpts = remap_coco17_to_layout(coco_kpts, spec)
+    kpts = temporal_align(kpts, target_frames)
+    if spec.has_virtual_center:
+        kpts = add_virtual_center_joint_by_indices(kpts, spec.virtual_center_parents)
+    return np.expand_dims(np.transpose(kpts, (2, 0, 1)), axis=-1).astype(np.float32)
 
 
 def to_stgcn_input_from_penn13(

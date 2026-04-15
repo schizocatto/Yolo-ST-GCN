@@ -26,7 +26,9 @@ from tqdm import tqdm
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.config import GYM99_NUM_CLASSES
+from src.checkpointing import load_checkpoint
 from src.dataset import PennActionDataset
+from src.experiment_config import apply_overrides, load_experiment_config
 from src.gym99_dataset import build_gym99_data_tensors, infer_num_gym99_classes
 from src.model import Model_STGCN
 from src.two_stream_stgcn import TwoStream_STGCN
@@ -34,12 +36,16 @@ from src.two_stream_stgcn import TwoStream_STGCN
 
 def parse_args():
     p = argparse.ArgumentParser(description='Inference/Evaluation on Gym99-skeleton test split')
+    p.add_argument('--experiment_config', default='',
+                   help='Optional JSON config for frequent experiment updates.')
     p.add_argument('--dataset_path', required=True, help='Path to gym99_skeleton.pkl')
     p.add_argument('--weights', required=True, help='Path to trained ST-GCN weights (.pth)')
     p.add_argument('--out_dir', default='outputs/gym99', help='Output directory')
     p.add_argument('--batch_size', type=int, default=64)
     p.add_argument('--num_classes', type=int, default=0,
                    help='Override class count. 0 = infer from dataset labels')
+    p.add_argument('--joint_spec_name', default='penn14', choices=['penn14', 'coco18'],
+                   help='Target joint layout for model input.')
     p.add_argument('--topk', type=int, default=5)
     p.add_argument('--num_workers', '--num_wokers', dest='num_workers', type=int, default=0,
                    help='Number of DataLoader workers (supports alias --num_wokers).')
@@ -93,12 +99,16 @@ def _evaluate_topk(model, loader, device, topk: int = 5):
 
 def main():
     args = parse_args()
+    if args.experiment_config:
+        cfg = load_experiment_config(args.experiment_config)
+        args = apply_overrides(args, cfg, sys.argv[1:])
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     os.makedirs(args.out_dir, exist_ok=True)
 
     if args.use_two_stream:
         data, bone_data, labels, flags, _, video_ids = build_gym99_data_tensors(
             dataset_path=args.dataset_path,
+            joint_spec_name=args.joint_spec_name,
             split='test',
             keep_unknown_split=False,
             return_bone_data=True,
@@ -106,6 +116,7 @@ def main():
     else:
         data, labels, flags, _, video_ids = build_gym99_data_tensors(
             dataset_path=args.dataset_path,
+            joint_spec_name=args.joint_spec_name,
             split='test',
             keep_unknown_split=False,
         )
@@ -117,11 +128,17 @@ def main():
     num_classes = args.num_classes if args.num_classes > 0 else inferred_classes
 
     model = (
-        TwoStream_STGCN(num_classes=num_classes)
+        TwoStream_STGCN(num_classes=num_classes, joint_spec=args.joint_spec_name)
         if args.use_two_stream
-        else Model_STGCN(num_classes=num_classes)
+        else Model_STGCN(num_classes=num_classes, joint_spec=args.joint_spec_name)
     ).to(device)
-    state_dict = torch.load(args.weights, map_location=device)
+    state_dict, ckpt_meta = load_checkpoint(args.weights, map_location=device)
+    ckpt_spec = ckpt_meta.get('joint_spec_name', '')
+    if ckpt_spec and ckpt_spec != args.joint_spec_name:
+        print(
+            f"[warning] Checkpoint joint_spec={ckpt_spec} but inference joint_spec={args.joint_spec_name}. "
+            "This may fail or degrade results."
+        )
     model.load_state_dict(state_dict)
     model.eval()
 
@@ -131,6 +148,7 @@ def main():
             labels,
             bone_data=bone_data if args.use_two_stream else None,
             include_bone=args.use_two_stream,
+            joint_spec_name=args.joint_spec_name,
         ),
         batch_size=args.batch_size,
         shuffle=False,

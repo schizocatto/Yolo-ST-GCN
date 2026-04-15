@@ -23,7 +23,13 @@ from typing import Dict, List, Tuple
 import numpy as np
 
 from src.config import PENN_BONE_PAIRS_14, TARGET_FRAMES
-from src.skeleton_utils import calculate_bone_data, ensure_t_j_2, to_stgcn_input_from_coco17
+from src.joint_specs import get_joint_spec
+from src.skeleton_utils import (
+    calculate_bone_data,
+    ensure_t_j_2,
+    to_stgcn_input_from_coco17,
+    to_stgcn_input_from_coco17_with_spec,
+)
 
 
 def _extract_coco17_xy(annotation: Dict) -> np.ndarray:
@@ -46,6 +52,7 @@ def _extract_coco17_xy(annotation: Dict) -> np.ndarray:
 def build_gym288_data_tensors(
     dataset_path: str,
     target_frames: int = TARGET_FRAMES,
+    joint_spec_name: str = 'penn14',
     split: str = 'all',
     keep_unknown_split: bool = False,
     return_bone_data: bool = False,
@@ -70,6 +77,9 @@ def build_gym288_data_tensors(
     video_ids        : list[str]
     """
     split_norm = split.strip().lower()
+    spec = get_joint_spec(joint_spec_name)
+    if bone_pairs is PENN_BONE_PAIRS_14:
+        bone_pairs = spec.bone_pairs
     if split_norm not in {'all', 'train', 'test'}:
         raise ValueError("split must be one of: 'all', 'train', 'test'")
 
@@ -109,7 +119,10 @@ def build_gym288_data_tensors(
                 continue
 
             raw_frame_counts.append(int(kpts17.shape[0]))
-            tensor = to_stgcn_input_from_coco17(kpts17, target_frames)
+            if joint_spec_name == 'penn14':
+                tensor = to_stgcn_input_from_coco17(kpts17, target_frames)
+            else:
+                tensor = to_stgcn_input_from_coco17_with_spec(kpts17, joint_spec_name, target_frames)
 
             all_data.append(tensor)
             if return_bone_data:

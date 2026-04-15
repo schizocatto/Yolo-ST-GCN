@@ -19,10 +19,26 @@ class TwoStream_STGCN(nn.Module):
     bone_data  : (N, C, T, V, M)
     """
 
-    def __init__(self, num_classes: int, in_channels: int = 2):
+    def __init__(
+        self,
+        num_classes: int,
+        in_channels: int = 2,
+        joint_spec: str = 'penn14',
+        edge_importance: bool = True,
+    ):
         super().__init__()
-        self.joint_stream = Model_STGCN(num_classes=num_classes, in_channels=in_channels)
-        self.bone_stream = Model_STGCN(num_classes=num_classes, in_channels=in_channels)
+        self.joint_stream = Model_STGCN(
+            num_classes=num_classes,
+            in_channels=in_channels,
+            joint_spec=joint_spec,
+            edge_importance=edge_importance,
+        )
+        self.bone_stream = Model_STGCN(
+            num_classes=num_classes,
+            in_channels=in_channels,
+            joint_spec=joint_spec,
+            edge_importance=edge_importance,
+        )
 
         # Learnable fusion gate in [0, 1] after sigmoid.
         self.alpha_logit = nn.Parameter(torch.tensor(0.0))
