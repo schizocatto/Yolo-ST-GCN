@@ -1,0 +1,141 @@
+"""
+gym99_dataset.py
+Gym99-skeleton dataset loading utilities.
+
+Expected dataset structure is compatible with Gym288-skeleton pickle:
+    {
+      'split': {'train': [frame_dir...], 'test': [frame_dir...]},
+      'annotations': [
+        {
+          'frame_dir': str,
+          'label': int,
+          'keypoint': np.ndarray (1, T, 17, 2),
+          ...
+        },
+        ...
+      ]
+    }
+"""
+
+import pickle
+from typing import Dict, List, Tuple
+
+import numpy as np
+
+from src.config import GYM99_NUM_CLASSES, PENN_BONE_PAIRS_14, TARGET_FRAMES
+from src.skeleton_utils import calculate_bone_data, ensure_t_j_2, to_stgcn_input_from_coco17
+
+
+def _extract_coco17_xy(annotation: Dict) -> np.ndarray:
+    """Extract keypoints from a Gym99 annotation as (T, 17, 2)."""
+    if 'keypoint' in annotation:
+        kp = np.asarray(annotation['keypoint'], dtype=np.float32)
+        if kp.ndim == 4 and kp.shape[0] == 1:
+            kp = kp[0]
+        return ensure_t_j_2(kp, expected_joints=17)
+
+    if 'kp_w_gt' in annotation:
+        kp_w_gt = np.asarray(annotation['kp_w_gt'], dtype=np.float32)
+        if kp_w_gt.ndim != 3 or kp_w_gt.shape[-1] < 2:
+            raise ValueError(f"Unsupported 'kp_w_gt' shape: {kp_w_gt.shape}")
+        return ensure_t_j_2(kp_w_gt[..., :2], expected_joints=17)
+
+    raise KeyError("Annotation must contain 'keypoint' or 'kp_w_gt'")
+
+
+def build_gym99_data_tensors(
+    dataset_path: str,
+    target_frames: int = TARGET_FRAMES,
+    split: str = 'all',
+    keep_unknown_split: bool = False,
+    return_bone_data: bool = False,
+    bone_pairs: List[Tuple[int, int]] = PENN_BONE_PAIRS_14,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, List[int], List[str]]:
+    """
+    Build ST-GCN tensors from Gym99-skeleton pickle.
+
+    Returns
+    -------
+    data             : float32 ndarray  (N, 2, target_frames, 14, 1)
+    labels           : int64 ndarray    (N,)
+    flags            : int8 ndarray     (N,)  (1=train, 0=test, -1=unknown)
+    raw_frame_counts : list[int]
+    video_ids        : list[str]
+    """
+    split_norm = split.strip().lower()
+    if split_norm not in {'all', 'train', 'test'}:
+        raise ValueError("split must be one of: 'all', 'train', 'test'")
+
+    with open(dataset_path, 'rb') as f:
+        payload = pickle.load(f)
+
+    split_info = payload.get('split', {})
+    train_ids = set(split_info.get('train', []))
+    test_ids = set(split_info.get('test', []))
+    annotations = payload.get('annotations', [])
+
+    all_data: List[np.ndarray] = []
+    all_bone_data: List[np.ndarray] = []
+    all_labels: List[int] = []
+    all_flags: List[int] = []
+    raw_frame_counts: List[int] = []
+    all_video_ids: List[str] = []
+
+    for ann in annotations:
+        try:
+            video_id = str(ann['frame_dir'])
+            label = int(ann['label'])
+            kpts17 = _extract_coco17_xy(ann)
+
+            if video_id in train_ids:
+                flag = 1
+            elif video_id in test_ids:
+                flag = 0
+            else:
+                flag = -1
+
+            if split_norm == 'train' and flag != 1:
+                continue
+            if split_norm == 'test' and flag != 0:
+                continue
+            if split_norm == 'all' and (flag == -1 and not keep_unknown_split):
+                continue
+
+            raw_frame_counts.append(int(kpts17.shape[0]))
+            tensor = to_stgcn_input_from_coco17(kpts17, target_frames)
+
+            all_data.append(tensor)
+            if return_bone_data:
+                all_bone_data.append(calculate_bone_data(tensor, bone_pairs).astype(np.float32))
+            all_labels.append(label)
+            all_flags.append(flag)
+            all_video_ids.append(video_id)
+
+        except Exception as exc:
+            vid = ann.get('frame_dir', '<unknown>')
+            print(f'  [skip] {vid}: {exc}')
+
+    data = np.array(all_data, dtype=np.float32)
+    labels = np.array(all_labels, dtype=np.int64)
+    flags = np.array(all_flags, dtype=np.int8)
+
+    if return_bone_data:
+        bone_data = np.array(all_bone_data, dtype=np.float32)
+        return data, bone_data, labels, flags, raw_frame_counts, all_video_ids
+
+    return data, labels, flags, raw_frame_counts, all_video_ids
+
+
+def infer_num_gym99_classes(dataset_path: str, fallback: int = GYM99_NUM_CLASSES) -> int:
+    """Infer number of classes from labels in Gym99 annotations."""
+    with open(dataset_path, 'rb') as f:
+        payload = pickle.load(f)
+
+    annotations = payload.get('annotations', [])
+    if not annotations:
+        return fallback
+
+    labels = [int(ann['label']) for ann in annotations if 'label' in ann]
+    if not labels:
+        return fallback
+    return max(labels) + 1

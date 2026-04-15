@@ -18,6 +18,11 @@ IN_CHANNELS    = 2    # (x, y) coordinates
 
 # Gym288-skeleton dataset defaults
 GYM288_NUM_CLASSES = 288
+GYM99_NUM_CLASSES = 99
+
+# FineGym category definition files
+GYM288_CATEGORIES_URL = 'https://sdolivia.github.io/FineGym/resources/dataset/gym288_categories.txt'
+GYM99_CATEGORIES_URL = 'https://sdolivia.github.io/FineGym/resources/dataset/gym99_categories.txt'
 
 # Penn Action joint names (0-12 = GT, 13 = virtual center)
 JOINT_NAMES = [
