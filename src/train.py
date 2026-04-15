@@ -224,11 +224,22 @@ def train_model_preloaded(
     train_labels     : Tensor (N,) already on ``device``
     train_bone_data  : optional Tensor (N, C, T, V, M) on ``device``
     """
+    def _is_same_device_family(t: torch.Tensor, target: torch.device) -> bool:
+        # Accept cuda vs cuda:0 as compatible; strict index equality only when both are explicit.
+        td = t.device
+        if td.type != target.type:
+            return False
+        if td.type != 'cuda':
+            return True
+        if target.index is None or td.index is None:
+            return True
+        return td.index == target.index
+
     if batch_size <= 0:
         raise ValueError('batch_size must be > 0 for preloaded training mode.')
-    if train_joint_data.device != device or train_labels.device != device:
+    if (not _is_same_device_family(train_joint_data, device)) or (not _is_same_device_family(train_labels, device)):
         raise ValueError('Preloaded tensors must be on the same device passed to train_model_preloaded.')
-    if train_bone_data is not None and train_bone_data.device != device:
+    if train_bone_data is not None and (not _is_same_device_family(train_bone_data, device)):
         raise ValueError('train_bone_data must be on the same device passed to train_model_preloaded.')
 
     criterion = nn.CrossEntropyLoss()
