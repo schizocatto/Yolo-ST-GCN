@@ -30,8 +30,8 @@ from src.checkpointing import load_checkpoint
 from src.dataset import PennActionDataset
 from src.experiment_config import apply_overrides, load_experiment_config
 from src.gym99_dataset import build_gym99_data_tensors, infer_num_gym99_classes
-from src.model import Model_STGCN
-from src.two_stream_stgcn import TwoStream_STGCN
+from src.model import Model_STGCN_COCO18
+from src.two_stream_stgcn import TwoStream_STGCN_COCO18
 
 
 def parse_args():

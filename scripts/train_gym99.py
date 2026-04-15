@@ -29,9 +29,9 @@ from src.checkpointing import save_checkpoint
 from src.dataset import PennActionDataset
 from src.experiment_config import apply_overrides, load_experiment_config
 from src.gym99_dataset import build_gym99_data_tensors, infer_num_gym99_classes
-from src.model import Model_STGCN
+from src.model import Model_STGCN_COCO18
 from src.train import eval_epoch, train_model
-from src.two_stream_stgcn import TwoStream_STGCN
+from src.two_stream_stgcn import TwoStream_STGCN_COCO18
 
 
 def parse_args():
@@ -143,7 +143,7 @@ def main():
         device=device,
     )
 
-    weights_name = 'stgcn_gym99_2s.pth' if args.use_two_stream else 'stgcn_gym99.pth'
+    weights_name = 'stgcn_gym99_coco18_2s.pth' if args.use_two_stream else 'stgcn_gym99_coco18.pth'
     weights_path = os.path.join(args.out_dir, weights_name)
     save_checkpoint(
         weights_path,

@@ -56,14 +56,17 @@ def build_gym99_data_tensors(
     split: str = 'all',
     keep_unknown_split: bool = False,
     return_bone_data: bool = False,
-    bone_pairs: List[Tuple[int, int]] = PENN_BONE_PAIRS_14,
+    bone_pairs: List[Tuple[int, int]] = COCO17_BONE_PAIRS_18,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, List[int], List[str]]:
     """
     Build ST-GCN tensors from Gym99-skeleton pickle.
 
+    All 17 COCO joints are kept (including face landmarks) and a virtual
+    center joint (index 17) is appended, giving 18 joints total.
+
     Returns
     -------
-    data             : float32 ndarray  (N, 2, target_frames, 14, 1)
+    data             : float32 ndarray  (N, 2, target_frames, 18, 1)
     labels           : int64 ndarray    (N,)
     flags            : int8 ndarray     (N,)  (1=train, 0=test, -1=unknown)
     raw_frame_counts : list[int]
