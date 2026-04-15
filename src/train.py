@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 from sklearn.metrics import accuracy_score, f1_score
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 
 # ---------------------------------------------------------------------------
@@ -22,6 +23,8 @@ def train_epoch(
     criterion: nn.Module,
     optimizer: torch.optim.Optimizer,
     device: torch.device,
+    show_progress: bool = False,
+    progress_desc: str = 'Train',
 ) -> Tuple[float, float]:
     """
     Run one training epoch.
@@ -34,7 +37,11 @@ def train_epoch(
     model.train()
     total_loss, all_preds, all_labels = 0.0, [], []
 
-    for batch_data, batch_labels in loader:
+    iterator = loader
+    if show_progress:
+        iterator = tqdm(loader, desc=progress_desc, leave=False)
+
+    for batch_data, batch_labels in iterator:
         batch_data   = batch_data.to(device)
         batch_labels = batch_labels.to(device)
 
@@ -49,6 +56,8 @@ def train_epoch(
         all_preds.extend(preds.cpu().numpy())
         all_labels.extend(batch_labels.cpu().numpy())
 
+    if len(loader) == 0:
+        return 0.0, 0.0
     avg_loss = total_loss / len(loader)
     accuracy = accuracy_score(all_labels, all_preds)
     return avg_loss, accuracy
@@ -59,6 +68,8 @@ def eval_epoch(
     loader: DataLoader,
     criterion: nn.Module,
     device: torch.device,
+    show_progress: bool = False,
+    progress_desc: str = 'Val',
 ) -> Tuple[float, float, float, List[int], List[int]]:
     """
     Run one evaluation epoch.
@@ -74,8 +85,12 @@ def eval_epoch(
     model.eval()
     total_loss, all_preds, all_labels = 0.0, [], []
 
+    iterator = loader
+    if show_progress:
+        iterator = tqdm(loader, desc=progress_desc, leave=False)
+
     with torch.no_grad():
-        for batch_data, batch_labels in loader:
+        for batch_data, batch_labels in iterator:
             batch_data   = batch_data.to(device)
             batch_labels = batch_labels.to(device)
 
@@ -129,8 +144,23 @@ def train_model(
     }
 
     for epoch in range(num_epochs):
-        tr_loss, tr_acc = train_epoch(model, train_loader, criterion, optimizer, device)
-        val_loss, val_acc, val_f1, _, _ = eval_epoch(model, val_loader, criterion, device)
+        tr_loss, tr_acc = train_epoch(
+            model,
+            train_loader,
+            criterion,
+            optimizer,
+            device,
+            show_progress=True,
+            progress_desc=f'Epoch {epoch+1}/{num_epochs} [train]',
+        )
+        val_loss, val_acc, val_f1, _, _ = eval_epoch(
+            model,
+            val_loader,
+            criterion,
+            device,
+            show_progress=True,
+            progress_desc=f'Epoch {epoch+1}/{num_epochs} [val]',
+        )
         scheduler.step()
 
         history['train_loss'].append(tr_loss)

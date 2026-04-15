@@ -65,7 +65,7 @@ class Graph_PennAction_14Nodes:
         # Row-normalise each partition
         for k in range(3):
             row_sum = A[k].sum(axis=1)
-            D_inv   = np.where(row_sum > 0, 1.0 / row_sum, 0.0)
+            D_inv   = np.where(row_sum > 0, 1.0 / (row_sum + 1e-4), 0.0)
             A[k]    = A[k] * D_inv[:, np.newaxis]
 
         return torch.tensor(A, dtype=torch.float32)

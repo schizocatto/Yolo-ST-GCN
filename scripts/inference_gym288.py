@@ -20,6 +20,7 @@ import torch
 import torch.nn as nn
 from sklearn.metrics import accuracy_score, f1_score
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 # Allow running from repo root without installing the package
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -39,6 +40,8 @@ def parse_args():
     p.add_argument('--num_classes', type=int, default=0,
                    help='Override class count. 0 = infer from dataset labels')
     p.add_argument('--topk', type=int, default=5)
+    p.add_argument('--num_workers', '--num_wokers', dest='num_workers', type=int, default=0,
+                   help='Number of DataLoader workers (supports alias --num_wokers).')
     return p.parse_args()
 
 
@@ -50,7 +53,7 @@ def _evaluate_topk(model, loader, device, topk: int = 5):
     total_loss = 0.0
 
     with torch.no_grad():
-        for batch_data, batch_labels in loader:
+        for batch_data, batch_labels in tqdm(loader, desc='Inference [test]', leave=False):
             batch_data = batch_data.to(device)
             batch_labels = batch_labels.to(device)
 
@@ -106,7 +109,10 @@ def main():
         batch_size=args.batch_size,
         shuffle=False,
         drop_last=False,
+        num_workers=args.num_workers,
+        pin_memory=torch.cuda.is_available(),
     )
+    print(f'DataLoader num_workers={args.num_workers}')
 
     loss, top1, topk_acc, macro_f1, preds, gt = _evaluate_topk(model, loader, device, topk=args.topk)
 

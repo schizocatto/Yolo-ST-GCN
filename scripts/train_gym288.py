@@ -41,6 +41,8 @@ def parse_args():
     p.add_argument('--weight_decay', type=float, default=1e-4)
     p.add_argument('--num_classes', type=int, default=0,
                    help='Override class count. 0 = infer from dataset labels')
+    p.add_argument('--num_workers', '--num_wokers', dest='num_workers', type=int, default=0,
+                   help='Number of DataLoader workers for both train/val (supports alias --num_wokers).')
     return p.parse_args()
 
 
@@ -75,13 +77,18 @@ def main():
         batch_size=args.batch_size,
         shuffle=True,
         drop_last=False,
+        num_workers=args.num_workers,
+        pin_memory=torch.cuda.is_available(),
     )
     val_loader = DataLoader(
         PennActionDataset(X_val, y_val),
         batch_size=args.batch_size,
         shuffle=False,
         drop_last=False,
+        num_workers=args.num_workers,
+        pin_memory=torch.cuda.is_available(),
     )
+    print(f'DataLoader num_workers={args.num_workers}')
 
     model = Model_STGCN(num_classes=num_classes).to(device)
     history = train_model(
