@@ -29,7 +29,7 @@ import torch
 import torch.nn as nn
 
 from src.config import COCO_TO_PENN_IDX, TARGET_FRAMES
-from src.dataset import add_virtual_center_joint, temporal_align
+from src.skeleton_utils import add_virtual_center_joint, temporal_align
 
 
 # ---------------------------------------------------------------------------

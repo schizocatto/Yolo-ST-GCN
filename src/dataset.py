@@ -1,182 +1,85 @@
 """
 dataset.py
-Data loading, preprocessing, and PyTorch Dataset for Penn Action.
+Unified dataset entrypoint for Penn and COCO keypoint sources.
 
 Key functions
 -------------
-load_mat_index(labels_dir)
-    Scan .mat files → pandas DataFrame with columns [video_id, action, nframes].
-
-build_data_tensors(labels_dir, class_to_id, target_frames)
-    Load and preprocess all exercise .mat files into (N, 2, T, 14, 1) numpy arrays.
+build_data_tensors(labels_dir, dataset_format, ...)
+    Dispatch to Penn/COCO loaders and always return ST-GCN-ready tensors
+    in Penn joint layout: (N, 2, T, 14, 1).
 
 PennActionDataset
     PyTorch Dataset wrapping pre-built numpy arrays.
 """
 
-import glob
-import os
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
-import pandas as pd
-import scipy.io
 import torch
 from torch.utils.data import Dataset
 
-from src.config import EXERCISE_CLASSES, CLASS_TO_ID, TARGET_FRAMES
+from src.config import CLASS_TO_ID, EXERCISE_CLASSES, TARGET_FRAMES
+from src.coco_dataset import build_coco_data_tensors
+from src.penn_dataset import build_penn_data_tensors, load_mat_index
+from src.skeleton_utils import (
+    add_virtual_center_joint,
+    remap_coco17_to_penn13,
+    temporal_align,
+    to_stgcn_input_from_coco17,
+    to_stgcn_input_from_penn13,
+)
 
-
-# ---------------------------------------------------------------------------
-# Low-level keypoint helpers
-# ---------------------------------------------------------------------------
-
-def add_virtual_center_joint(kpts: np.ndarray) -> np.ndarray:
-    """
-    Append a virtual center joint to a keypoint sequence.
-
-    Parameters
-    ----------
-    kpts : (T, 13, 2)  — raw Penn Action keypoints
-
-    Returns
-    -------
-    (T, 14, 2)  — with joint 13 = mean of l_sho, r_sho, l_hip, r_hip
-    """
-    center = (kpts[:, 1, :] + kpts[:, 2, :] + kpts[:, 7, :] + kpts[:, 8, :]) / 4.0
-    return np.concatenate((kpts, center[:, np.newaxis, :]), axis=1)
-
-
-def temporal_align(kpts: np.ndarray, target_frames: int = TARGET_FRAMES) -> np.ndarray:
-    """
-    Uniformly resample a keypoint sequence to exactly `target_frames` frames.
-
-    Parameters
-    ----------
-    kpts          : (T, J, 2)
-    target_frames : desired output length
-
-    Returns
-    -------
-    (target_frames, J, 2)
-    """
-    T = kpts.shape[0]
-    if T == target_frames:
-        return kpts
-    indices = np.linspace(0, T - 1, target_frames).astype(int)
-    return kpts[indices]
-
-
-# ---------------------------------------------------------------------------
-# Dataset scanning
-# ---------------------------------------------------------------------------
-
-def load_mat_index(labels_dir: str) -> pd.DataFrame:
-    """
-    Scan all .mat files in `labels_dir` and return a DataFrame with
-    columns: video_id, action, nframes.
-    """
-    records = []
-    for mat_path in sorted(glob.glob(os.path.join(labels_dir, '*.mat'))):
-        video_id    = os.path.basename(mat_path).replace('.mat', '')
-        mat_content = scipy.io.loadmat(mat_path)
-
-        action = mat_content['action'][0]
-        if isinstance(action, np.ndarray) and len(action) > 0:
-            action = action[0]
-        nframes = int(mat_content['nframes'][0][0])
-        records.append({'video_id': video_id, 'action': str(action), 'nframes': nframes})
-
-    return pd.DataFrame(records)
-
-
-# ---------------------------------------------------------------------------
-# Full preprocessing pipeline
-# ---------------------------------------------------------------------------
 
 def build_data_tensors(
     labels_dir: str,
+    dataset_format: str = 'penn',
     exercise_classes: List[str] = EXERCISE_CLASSES,
-    class_to_id: dict = CLASS_TO_ID,
+    class_to_id: Dict[str, int] = CLASS_TO_ID,
     target_frames: int = TARGET_FRAMES,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, List[int]]:
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, List[int], List[str]]:
     """
-    Load, preprocess and stack all exercise-class .mat files.
+    Load and preprocess keypoint files into unified ST-GCN tensors.
 
-    Uses the official Penn Action ``train`` field (1 = train, 0 = test) for
-    subject-isolated splitting.  Do NOT use sklearn train_test_split on the
-    returned arrays — split by the returned ``flags`` array instead.
+    Parameters
+    ----------
+    labels_dir      : input directory (Penn .mat or COCO .npz)
+    dataset_format  : 'penn' or 'coco'
+    exercise_classes: class whitelist
+    class_to_id     : class mapping
+    target_frames   : temporal alignment length
 
     Returns
     -------
     data             : float32 ndarray  (N, 2, target_frames, 14, 1)
     labels           : int64 ndarray    (N,)
-    flags            : int8 ndarray     (N,)  — 1 = official train, 0 = official test
-    raw_frame_counts : list of original video lengths (before alignment)
-    video_ids        : list of video ID strings (stem of each .mat filename)
+    flags            : int8 ndarray     (N,)  (1=train, 0=test)
+    raw_frame_counts : list[int]
+    video_ids        : list[str]
     """
-    all_data, all_labels, all_flags, raw_frame_counts = [], [], [], []
-    all_video_ids, all_actions = [], []
+    fmt = dataset_format.strip().lower()
+    if fmt == 'penn':
+        return build_penn_data_tensors(
+            labels_dir=labels_dir,
+            exercise_classes=exercise_classes,
+            class_to_id=class_to_id,
+            target_frames=target_frames,
+        )
+    if fmt == 'coco':
+        return build_coco_data_tensors(
+            labels_dir=labels_dir,
+            exercise_classes=exercise_classes,
+            class_to_id=class_to_id,
+            target_frames=target_frames,
+        )
 
-    for mat_path in sorted(glob.glob(os.path.join(labels_dir, '*.mat'))):
-        try:
-            mat_data = scipy.io.loadmat(mat_path)
-            action   = mat_data['action'][0]
-            if isinstance(action, np.ndarray) and len(action) > 0:
-                action = action[0]
-            action = str(action)
-            if action not in exercise_classes:
-                continue
+    raise ValueError(
+        f"Unsupported dataset_format='{dataset_format}'. Expected one of: 'penn', 'coco'."
+    )
 
-            train_flag = int(mat_data['train'][0][0]) if 'train' in mat_data else 1
-
-            # Stack x, y → (T, 13, 2)
-            kpts = np.stack((mat_data['x'], mat_data['y']), axis=-1).astype(np.float32)
-            raw_frame_counts.append(kpts.shape[0])
-
-            # Align temporally, add virtual center joint
-            kpts = add_virtual_center_joint(temporal_align(kpts, target_frames))
-
-            # Reshape to (2, T, 14, 1) to match model input format
-            tensor = np.expand_dims(np.transpose(kpts, (2, 0, 1)), axis=-1)
-            all_data.append(tensor)
-            all_labels.append(class_to_id[action])
-            all_flags.append(train_flag)
-            all_video_ids.append(os.path.splitext(os.path.basename(mat_path))[0])
-            all_actions.append(action)
-
-        except Exception as exc:
-            print(f"  [skip] {os.path.basename(mat_path)}: {exc}")
-
-    data   = np.array(all_data,   dtype=np.float32)   # (N, 2, T, 14, 1)
-    labels = np.array(all_labels, dtype=np.int64)
-    flags  = np.array(all_flags,  dtype=np.int8)
-
-    # If the dataset has no official test split (all flags == 1), fall back to a
-    # subject-isolated split: within each class, videos are ordered by subject
-    # (contiguous IDs = same subject), so taking the last 30% per class as test
-    # avoids the same subject appearing in both partitions.
-    if (flags == 0).sum() == 0:
-        print('[dataset] No official test split found — applying per-class subject-isolated split (last 30% per class = test).')
-        flags = np.ones(len(flags), dtype=np.int8)
-        for cls in exercise_classes:
-            idx = [i for i, a in enumerate(all_actions) if a == cls]
-            if not idx:
-                continue
-            n_test = max(1, int(round(len(idx) * 0.3)))
-            for i in idx[-n_test:]:
-                flags[i] = 0
-
-    return data, labels, flags, raw_frame_counts, all_video_ids
-
-
-# ---------------------------------------------------------------------------
-# PyTorch Dataset
-# ---------------------------------------------------------------------------
 
 class PennActionDataset(Dataset):
     """
-    Wraps pre-built numpy arrays as a PyTorch Dataset.
+    Wrap pre-built arrays as a PyTorch Dataset.
 
     Parameters
     ----------
@@ -185,11 +88,15 @@ class PennActionDataset(Dataset):
     """
 
     def __init__(self, data: np.ndarray, labels: np.ndarray):
-        self.data   = torch.FloatTensor(data)
+        self.data = torch.FloatTensor(data)
         self.labels = torch.LongTensor(labels)
 
     def __len__(self) -> int:
         return len(self.labels)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int):
         return self.data[idx], self.labels[idx]
+
+
+# Backward-compatible alias for clearer naming in future upgrades.
+COCOKeypointsDataset = PennActionDataset
