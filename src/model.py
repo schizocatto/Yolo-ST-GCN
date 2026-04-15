@@ -33,6 +33,11 @@ class STGCN_Block(nn.Module):
     stride    : temporal stride  (1 or 2)
     residual  : whether to use a residual connection
     """
+class STGCN_Block(nn.Module):
+    """
+    One ST-GCN block: spatial graph convolution followed by temporal convolution.
+    (Đã tích hợp Edge Importance Weighting)
+    """
 
     def __init__(
         self,
@@ -41,16 +46,29 @@ class STGCN_Block(nn.Module):
         A: torch.Tensor,
         stride: int = 1,
         residual: bool = True,
+        edge_importance: bool = False, # BỔ SUNG: Cờ bật/tắt trọng số cạnh
     ):
         super().__init__()
         K = A.size(0)
         self.K = K
+        
+        # Ma trận kề gốc giữ cố định
         self.A = nn.Parameter(A, requires_grad=False)
+        
+        # ==========================================
+        # BỔ SUNG 1: Khởi tạo Trọng số quan trọng cạnh
+        # ==========================================
+        if edge_importance:
+            # Khởi tạo ma trận toàn số 1, cùng size (K, V, V) với A
+            self.edge_weight = nn.Parameter(torch.ones(A.size()))
+        else:
+            # Nếu tắt, trọng số chỉ là 1 số vô hướng
+            self.edge_weight = 1.0
 
-        # Spatial graph convolution (1×1 across joints)
+        # Spatial graph convolution (1x1 across joints)
         self.gcn = nn.Conv2d(in_ch, out_ch * K, kernel_size=1)
 
-        # Temporal convolution (9×1 kernel with same-padding)
+        # Temporal convolution (9x1 kernel with same-padding)
         self.tcn = nn.Conv2d(
             out_ch, out_ch,
             kernel_size=(9, 1),
@@ -72,10 +90,16 @@ class STGCN_Block(nn.Module):
         r = self.res(x)
 
         x = self.gcn(x).view(N, self.K, -1, T, V)          # (N, K, out_ch, T, V)
-        x = torch.einsum('nkctv,kvw->nctw', x, self.A)     # (N, out_ch, T, V)
+        
+        # ==========================================
+        # BỔ SUNG 2: Áp dụng trọng số trước khi einsum
+        # ==========================================
+        weighted_A = self.A * self.edge_weight             # (K, V, V) * (K, V, V)
+        
+        x = torch.einsum('nkctv,kvw->nctw', x, weighted_A) # (N, out_ch, T, V)
         x = self.tcn(x)
+        
         return self.relu(x + r)
-
 
 class Model_STGCN(nn.Module):
     """
@@ -96,9 +120,13 @@ class Model_STGCN(nn.Module):
         self.st_gcn_networks = nn.ModuleList([
             STGCN_Block(in_channels, 64,  A, residual=False),
             STGCN_Block(64,  64,  A),
+            STGCN_Block(64,  64,  A),
+            STGCN_Block(64,  64,  A),
             STGCN_Block(64,  128, A, stride=2),
             STGCN_Block(128, 128, A),
+            STGCN_Block(128, 128, A),
             STGCN_Block(128, 256, A, stride=2),
+            STGCN_Block(256, 256, A),
             STGCN_Block(256, 256, A),
         ])
 
