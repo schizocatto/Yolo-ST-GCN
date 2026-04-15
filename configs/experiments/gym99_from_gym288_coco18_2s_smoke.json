@@ -1,0 +1,14 @@
+{
+  "auto_build_from_gym288": true,
+  "gym288_dataset_path": "/content/Gym288-skeleton/gym_288_skeleton.pkl",
+  "dataset_path": "/content/Gym99-from-Gym288/gym99_from_gym288.pkl",
+  "joint_spec_name": "coco18",
+  "use_two_stream": true,
+  "epochs": 2,
+  "batch_size": 64,
+  "lr": 0.001,
+  "weight_decay": 0.0001,
+  "num_workers": 0,
+  "max_train_samples": 2048,
+  "max_val_samples": 512
+}

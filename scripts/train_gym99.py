@@ -10,6 +10,14 @@ python scripts/train_gym99.py \
     --epochs 30 \
     --batch_size 32 \
     --lr 0.001
+
+Or auto-build Gym99 from Gym288 first (no manual notebook preprocessing):
+
+python scripts/train_gym99.py \
+    --auto_build_from_gym288 \
+    --gym288_dataset_path /path/to/gym288_skeleton.pkl \
+    --dataset_path /path/to/gym99_from_gym288.pkl \
+    --out_dir outputs/gym99
 """
 
 import argparse
@@ -28,17 +36,24 @@ from src.config import GYM99_NUM_CLASSES
 from src.checkpointing import save_checkpoint
 from src.dataset import PennActionDataset
 from src.experiment_config import apply_overrides, load_experiment_config
+from src.gym99_builder import build_gym99_from_gym288_pickle
 from src.gym99_dataset import build_gym99_data_tensors, infer_num_gym99_classes
-from src.model import Model_STGCN_COCO18
+from src.model import Model_STGCN
 from src.train import eval_epoch, train_model
-from src.two_stream_stgcn import TwoStream_STGCN_COCO18
+from src.two_stream_stgcn import TwoStream_STGCN
 
 
 def parse_args():
     p = argparse.ArgumentParser(description='Train ST-GCN on Gym99-skeleton')
     p.add_argument('--experiment_config', default='',
                    help='Optional JSON config for frequent experiment updates.')
-    p.add_argument('--dataset_path', required=True, help='Path to gym99_skeleton.pkl')
+    p.add_argument('--dataset_path', default='', help='Path to gym99_skeleton.pkl')
+    p.add_argument('--gym288_dataset_path', default='',
+                   help='Optional Gym288 pickle path used to auto-build Gym99 when needed.')
+    p.add_argument('--auto_build_from_gym288', action='store_true',
+                   help='Auto-build Gym99 pickle from Gym288 before training.')
+    p.add_argument('--gym99_generated_path', default='outputs/datasets/gym99_from_gym288.pkl',
+                   help='Output path used when auto-building Gym99 from Gym288.')
     p.add_argument('--out_dir', default='outputs/gym99', help='Output directory')
     p.add_argument('--epochs', type=int, default=30)
     p.add_argument('--batch_size', type=int, default=32)
@@ -64,6 +79,36 @@ def main():
     if args.experiment_config:
         cfg = load_experiment_config(args.experiment_config)
         args = apply_overrides(args, cfg, sys.argv[1:])
+
+    should_auto_build = args.auto_build_from_gym288 or (not args.dataset_path and bool(args.gym288_dataset_path))
+    if should_auto_build:
+        if not args.gym288_dataset_path:
+            raise ValueError('auto_build_from_gym288 requires --gym288_dataset_path (or config key gym288_dataset_path).')
+        out_path = args.dataset_path if args.dataset_path else args.gym99_generated_path
+        print('Building Gym99-from-Gym288 pickle...')
+        stats = build_gym99_from_gym288_pickle(
+            gym288_dataset_path=args.gym288_dataset_path,
+            gym99_dataset_path=out_path,
+        )
+        print(
+            'Gym99 mapping stats:',
+            f"direct={stats['matched_direct']}",
+            f"minus1={stats['matched_minus1']}",
+            f"plus1={stats['matched_plus1']}",
+            f"train={stats['train_count']}",
+            f"test={stats['test_count']}",
+        )
+        if stats['train_count'] == 0 or stats['test_count'] == 0:
+            raise RuntimeError('Gym99 split is empty after mapping; abort before training.')
+        args.dataset_path = out_path
+
+    if not args.dataset_path:
+        raise ValueError(
+            'Missing dataset path. Provide --dataset_path, or use --auto_build_from_gym288 with --gym288_dataset_path.'
+        )
+    if not os.path.exists(args.dataset_path):
+        raise FileNotFoundError(f'Gym99 dataset not found: {args.dataset_path}')
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     os.makedirs(args.out_dir, exist_ok=True)
 

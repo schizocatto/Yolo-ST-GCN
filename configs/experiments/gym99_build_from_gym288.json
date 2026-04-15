@@ -1,0 +1,4 @@
+{
+  "gym288_dataset_path": "/content/Gym288-skeleton/gym_288_skeleton.pkl",
+  "gym99_dataset_path": "/content/Gym99-from-Gym288/gym99_from_gym288.pkl"
+}
