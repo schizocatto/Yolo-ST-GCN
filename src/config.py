@@ -16,6 +16,9 @@ TARGET_FRAMES  = 64
 NUM_JOINTS     = 14   # 13 Penn Action + 1 virtual center
 IN_CHANNELS    = 2    # (x, y) coordinates
 
+# Gym288-skeleton dataset defaults
+GYM288_NUM_CLASSES = 288
+
 # Penn Action joint names (0-12 = GT, 13 = virtual center)
 JOINT_NAMES = [
     'head', 'l_sho', 'r_sho', 'l_elbow', 'r_elbow',

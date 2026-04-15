@@ -20,6 +20,7 @@ from torch.utils.data import Dataset
 
 from src.config import CLASS_TO_ID, EXERCISE_CLASSES, TARGET_FRAMES
 from src.coco_dataset import build_coco_data_tensors
+from src.gym288_dataset import build_gym288_data_tensors
 from src.penn_dataset import build_penn_data_tensors, load_mat_index
 from src.skeleton_utils import (
     add_virtual_center_joint,
@@ -43,7 +44,7 @@ def build_data_tensors(
     Parameters
     ----------
     labels_dir      : input directory (Penn .mat or COCO .npz)
-    dataset_format  : 'penn' or 'coco'
+    dataset_format  : 'penn', 'coco', or 'gym288'
     exercise_classes: class whitelist
     class_to_id     : class mapping
     target_frames   : temporal alignment length
@@ -71,9 +72,16 @@ def build_data_tensors(
             class_to_id=class_to_id,
             target_frames=target_frames,
         )
+    if fmt == 'gym288':
+        return build_gym288_data_tensors(
+            dataset_path=labels_dir,
+            target_frames=target_frames,
+            split='all',
+            keep_unknown_split=False,
+        )
 
     raise ValueError(
-        f"Unsupported dataset_format='{dataset_format}'. Expected one of: 'penn', 'coco'."
+        f"Unsupported dataset_format='{dataset_format}'. Expected one of: 'penn', 'coco', 'gym288'."
     )
 
 
