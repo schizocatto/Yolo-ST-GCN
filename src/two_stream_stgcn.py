@@ -6,7 +6,7 @@ Two-stream ST-GCN with late fusion (joint stream + bone stream).
 import torch
 import torch.nn as nn
 
-from src.model import Model_STGCN, Model_STGCN_COCO18
+from src.model import Model_STGCN
 
 
 class TwoStream_STGCN(nn.Module):
@@ -61,10 +61,26 @@ class TwoStream_STGCN_COCO18(nn.Module):
     bone_data  : (N, C, T, 18, M)
     """
 
-    def __init__(self, num_classes: int, in_channels: int = 2):
+    def __init__(
+        self,
+        num_classes: int,
+        in_channels: int = 2,
+        edge_importance: bool = True,
+    ):
         super().__init__()
-        self.joint_stream = Model_STGCN_COCO18(num_classes=num_classes, in_channels=in_channels)
-        self.bone_stream  = Model_STGCN_COCO18(num_classes=num_classes, in_channels=in_channels)
+        # Backward-compatible wrapper: use the unified Model_STGCN with coco18 graph.
+        self.joint_stream = Model_STGCN(
+            num_classes=num_classes,
+            in_channels=in_channels,
+            joint_spec='coco18',
+            edge_importance=edge_importance,
+        )
+        self.bone_stream = Model_STGCN(
+            num_classes=num_classes,
+            in_channels=in_channels,
+            joint_spec='coco18',
+            edge_importance=edge_importance,
+        )
 
         self.alpha_logit = nn.Parameter(torch.tensor(0.0))
 
