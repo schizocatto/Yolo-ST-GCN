@@ -35,3 +35,6 @@ Thumbs.db
 penn_action/
 *.mat
 *.zip
+
+# Local environment config (copy from .env.example)
+.env
