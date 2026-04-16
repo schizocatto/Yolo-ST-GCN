@@ -77,7 +77,7 @@ class Model_STGCN(nn.Module):
         in_channels: int = IN_CHANNELS,
         joint_spec: str = 'penn14',
         edge_importance: bool = True,
-        block_dropout: float = 0.2,
+        block_dropout: float = 0.0,
         classifier_dropout: float = 0.3,
     ):
         super().__init__()

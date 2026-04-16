@@ -156,6 +156,8 @@ def train_model(
     focal_alpha_mode: str = 'none',
     num_classes: Optional[int] = None,
     train_labels: Optional[torch.Tensor | np.ndarray] = None,
+    start_epoch: int = 0,
+    warmup_epochs: int = 0,
 ) -> Dict[str, List[float]]:
     """
     Train `model` for `num_epochs` and return the history dictionary.
@@ -189,19 +191,35 @@ def train_model(
         focal_alpha=focal_alpha,
     )
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-    # Keep legacy scheduler args in signature for backward compatibility.
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer,
-        T_max=max(1, num_epochs),
-        eta_min=0.0,
-    )
+    if warmup_epochs > 0:
+        warmup_ep = min(warmup_epochs, num_epochs - 1)
+        cosine_ep = num_epochs - warmup_ep
+        scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer,
+            schedulers=[
+                torch.optim.lr_scheduler.LinearLR(
+                    optimizer, start_factor=1e-2, end_factor=1.0, total_iters=warmup_ep),
+                torch.optim.lr_scheduler.CosineAnnealingLR(
+                    optimizer, T_max=max(1, cosine_ep), eta_min=0.0),
+            ],
+            milestones=[warmup_ep],
+        )
+        print(f'[train] LR warmup: {warmup_ep} epochs → cosine decay for {cosine_ep} epochs')
+    else:
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=max(1, num_epochs),
+            eta_min=0.0,
+        )
 
     history: Dict[str, List[float]] = {
         'train_loss': [], 'val_loss': [],
         'train_acc':  [], 'val_acc':  [], 'val_f1': [],
     }
 
+    total_epochs = start_epoch + num_epochs
     for epoch in range(num_epochs):
+        actual_epoch = start_epoch + epoch + 1
         tr_loss, tr_acc = train_epoch(
             model,
             train_loader,
@@ -209,7 +227,7 @@ def train_model(
             optimizer,
             device,
             show_progress=True,
-            progress_desc=f'Epoch {epoch+1}/{num_epochs} [train]',
+            progress_desc=f'Epoch {actual_epoch}/{total_epochs} [train]',
         )
         val_loss, val_acc, val_f1, _, _ = eval_epoch(
             model,
@@ -217,7 +235,7 @@ def train_model(
             criterion,
             device,
             show_progress=True,
-            progress_desc=f'Epoch {epoch+1}/{num_epochs} [val]',
+            progress_desc=f'Epoch {actual_epoch}/{total_epochs} [val]',
         )
         scheduler.step()
 
@@ -228,13 +246,13 @@ def train_model(
         history['val_f1'].append(val_f1)
 
         print(
-            f"Epoch {epoch+1}/{num_epochs}  "
+            f"Epoch {actual_epoch}/{total_epochs}  "
             f"train_loss={tr_loss:.4f}  train_acc={tr_acc:.4f}  "
             f"val_loss={val_loss:.4f}  val_acc={val_acc:.4f}  val_f1={val_f1:.4f}"
         )
 
-        if checkpoint_every > 0 and on_checkpoint is not None and ((epoch + 1) % checkpoint_every == 0):
-            on_checkpoint(epoch + 1, model)
+        if checkpoint_every > 0 and on_checkpoint is not None and (actual_epoch % checkpoint_every == 0):
+            on_checkpoint(actual_epoch, model)
 
     return history
 
@@ -258,6 +276,8 @@ def train_model_preloaded(
     focal_gamma: float = 2.0,
     focal_alpha_mode: str = 'none',
     num_classes: Optional[int] = None,
+    start_epoch: int = 0,
+    warmup_epochs: int = 0,
 ) -> Dict[str, List[float]]:
     """
     Train when full training tensors are preloaded on the target device.
@@ -302,12 +322,26 @@ def train_model_preloaded(
         focal_alpha=focal_alpha,
     )
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-    # Keep legacy scheduler args in signature for backward compatibility.
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer,
-        T_max=max(1, num_epochs),
-        eta_min=0.0,
-    )
+    if warmup_epochs > 0:
+        warmup_ep = min(warmup_epochs, num_epochs - 1)
+        cosine_ep = num_epochs - warmup_ep
+        scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer,
+            schedulers=[
+                torch.optim.lr_scheduler.LinearLR(
+                    optimizer, start_factor=1e-2, end_factor=1.0, total_iters=warmup_ep),
+                torch.optim.lr_scheduler.CosineAnnealingLR(
+                    optimizer, T_max=max(1, cosine_ep), eta_min=0.0),
+            ],
+            milestones=[warmup_ep],
+        )
+        print(f'[train] LR warmup: {warmup_ep} epochs → cosine decay for {cosine_ep} epochs')
+    else:
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=max(1, num_epochs),
+            eta_min=0.0,
+        )
 
     history: Dict[str, List[float]] = {
         'train_loss': [], 'val_loss': [],
@@ -317,14 +351,16 @@ def train_model_preloaded(
     num_samples = int(train_labels.size(0))
     num_batches = max(1, (num_samples + batch_size - 1) // batch_size)
 
+    total_epochs = start_epoch + num_epochs
     for epoch in range(num_epochs):
+        actual_epoch = start_epoch + epoch + 1
         model.train()
         total_loss = 0.0
         total_correct = 0
         total_seen = 0
 
         perm = torch.randperm(num_samples, device=device)
-        progress = tqdm(range(0, num_samples, batch_size), desc=f'Epoch {epoch+1}/{num_epochs} [train-preload]', leave=False)
+        progress = tqdm(range(0, num_samples, batch_size), desc=f'Epoch {actual_epoch}/{total_epochs} [train-preload]', leave=False)
         for start in progress:
             idx = perm[start:start + batch_size]
             joint_batch = train_joint_data[idx]
@@ -351,7 +387,7 @@ def train_model_preloaded(
             criterion,
             device,
             show_progress=True,
-            progress_desc=f'Epoch {epoch+1}/{num_epochs} [val]',
+            progress_desc=f'Epoch {actual_epoch}/{total_epochs} [val]',
         )
         scheduler.step()
 
@@ -362,12 +398,12 @@ def train_model_preloaded(
         history['val_f1'].append(val_f1)
 
         print(
-            f"Epoch {epoch+1}/{num_epochs}  "
+            f"Epoch {actual_epoch}/{total_epochs}  "
             f"train_loss={train_loss:.4f}  train_acc={train_acc:.4f}  "
             f"val_loss={val_loss:.4f}  val_acc={val_acc:.4f}  val_f1={val_f1:.4f}"
         )
 
-        if checkpoint_every > 0 and on_checkpoint is not None and ((epoch + 1) % checkpoint_every == 0):
-            on_checkpoint(epoch + 1, model)
+        if checkpoint_every > 0 and on_checkpoint is not None and (actual_epoch % checkpoint_every == 0):
+            on_checkpoint(actual_epoch, model)
 
     return history

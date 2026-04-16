@@ -12,6 +12,29 @@ from src.config import COCO_TO_PENN_IDX, TARGET_FRAMES
 from src.joint_specs import JointSpec, get_joint_spec
 
 
+def bbox_normalize(tensor: np.ndarray, eps: float = 1e-6) -> np.ndarray:
+    """
+    Per-sample bounding box normalization (vectorized).
+
+    Maps each skeleton's x and y coordinates independently into [0, 1]
+    based on the skeleton's own spatial extent. Invariant to camera
+    distance and subject position in frame.
+
+    Parameters
+    ----------
+    tensor : float32 ndarray (N, 2, T, V, M)
+               channel 0 = x coords, channel 1 = y coords
+
+    Returns
+    -------
+    normalized copy with same shape and dtype
+    """
+    out = tensor.copy()                                    # (N, 2, T, V, M)
+    lo  = out.min(axis=(2, 3, 4), keepdims=True)          # (N, 2, 1, 1, 1)
+    hi  = out.max(axis=(2, 3, 4), keepdims=True)
+    return ((out - lo) / (hi - lo + eps)).astype(tensor.dtype)
+
+
 def add_virtual_center_joint(kpts: np.ndarray) -> np.ndarray:
     """
     Append virtual center joint (index 13) as mean of joints 1,2,7,8.

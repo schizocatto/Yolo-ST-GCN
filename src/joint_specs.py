@@ -32,6 +32,9 @@ PENN14_BONE_PAIRS = [
 ]
 
 COCO18_BONE_PAIRS = [
+    # Face connections (nose → eyes → ears)
+    (0, 1), (0, 2),
+    (1, 3), (2, 4),
     # COCO body limbs (17 joints)
     (0, 5), (0, 6),
     (5, 7), (7, 9),

@@ -142,3 +142,37 @@ python scripts/count_multiperson.py \
 ## Original notebooks
 Archived in `notebooks/`. The `yolo_stgcn_inference_progress_bar_run_completed.ipynb`
 contains the completed Colab run output and the HuggingFace weights URL for the published checkpoint.
+
+---
+
+## Gym99 work (branch: duy) — session 2026-04-15/16
+
+### What was done
+- Added full COCO-17 joint support for Gym99 (all 17 joints kept, including face landmarks).
+  Face joints (eyes, ears) contribute to the centripetal/centrifugal adjacency partitions.
+- Virtual center (joint 17 = mean of joints 5,6,11,12) appended → **18 joints total**.
+- New files/classes added:
+  - `src/config.py`: `COCO17_JOINT_NAMES`, `COCO17_BONES`, `COCO17_BONES_18`, `COCO17_BONE_PAIRS_18`
+  - `src/graph.py`: `Graph_COCO17_18Nodes` — 3-partition adjacency `(3, 18, 18)`
+  - `src/skeleton_utils.py`: `add_virtual_center_joint_coco17`, `to_stgcn_input_from_coco17_full` → `(2, T, 18, 1)`
+  - `src/gym99_dataset.py`: switched to 18-joint pipeline; tensors are `(N, 2, T, 18, 1)`
+  - `src/model.py`: `Model_STGCN_COCO18`
+  - `src/two_stream_stgcn.py`: `TwoStream_STGCN_COCO18`
+  - `scripts/train_gym99.py` / `inference_gym99.py`: use COCO18 models; weights saved as `stgcn_gym99_coco18.pth`
+  - `notebooks/stgcn-gym99.ipynb`: full training notebook for Gym99
+
+### Gym99 dataset — no standalone HuggingFace repo exists
+Derived from Gym288 in the notebook:
+1. Download `Lozumi/Gym288-skeleton`
+2. Fetch FineGym category files from `sdolivia.github.io/FineGym/resources/dataset/`
+3. Parse `Clabel` and `Glabel` fields (format: `Clabel: N; set: S; Glabel: G; desc`)
+4. Join via `Glabel` (shared global ID): `Gym288 Clabel → Glabel → Gym99 Clabel`
+5. Filter + remap annotations → save `gym99_skeleton.pkl`
+
+### Currently training
+- Command: `scripts/train_gym99.py --batch_size 256 --num_workers 2`
+- GPU utilisation was low with batch_size=64 → quadrupled to 256
+- To keep display awake on macOS during training: `caffeinate -id`
+
+### Pending
+- Teammate is refactoring the codebase on branch `duy` — pull latest before continuing

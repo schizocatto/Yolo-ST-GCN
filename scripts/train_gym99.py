@@ -33,7 +33,8 @@ from torch.utils.data import DataLoader
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.config import GYM99_NUM_CLASSES
-from src.checkpointing import save_checkpoint
+from src.checkpointing import load_checkpoint, save_checkpoint
+from src.skeleton_utils import bbox_normalize
 from src.dataset import PennActionDataset
 from src.experiment_config import apply_overrides, load_experiment_config
 from src.gym99_builder import build_gym99_from_gym288_pickle
@@ -82,6 +83,10 @@ def parse_args():
                    help='Focal Loss gamma parameter.')
     p.add_argument('--focal_alpha_mode', default='none', choices=['none', 'inverse', 'sqrt_inverse'],
                    help='Class alpha weighting mode for focal loss.')
+    p.add_argument('--bbox_norm', action='store_true',
+                   help='Apply per-sample bounding box normalization to skeleton coordinates before training.')
+    p.add_argument('--warmup_epochs', type=int, default=0,
+                   help='Linear LR warmup epochs before cosine decay (0 = cosine only).')
     return p.parse_args()
 
 
@@ -166,6 +171,15 @@ def main():
         if B_val is not None:
             B_val = B_val[:n]
     print(f'Loaded {len(data)} samples  train={len(X_train)}  test={len(X_val)}')
+
+    if args.bbox_norm:
+        print('[info] Applying bbox normalization to train and val tensors...')
+        X_train = bbox_normalize(X_train)
+        X_val   = bbox_normalize(X_val)
+        if B_train is not None:
+            B_train = bbox_normalize(B_train)
+        if B_val is not None:
+            B_val = bbox_normalize(B_val)
 
     inferred_classes = infer_num_gym99_classes(args.dataset_path, fallback=GYM99_NUM_CLASSES)
     num_classes = args.num_classes if args.num_classes > 0 else inferred_classes
@@ -260,6 +274,7 @@ def main():
                 focal_alpha_mode=args.focal_alpha_mode,
                 num_classes=num_classes,
                 train_labels=y_train,
+                warmup_epochs=args.warmup_epochs,
             )
         else:
             print('[info] Preloading full train tensors to VRAM...')
@@ -287,6 +302,7 @@ def main():
                 focal_gamma=args.focal_gamma,
                 focal_alpha_mode=args.focal_alpha_mode,
                 num_classes=num_classes,
+                warmup_epochs=args.warmup_epochs,
             )
     else:
         history = train_model(
@@ -304,6 +320,7 @@ def main():
             focal_alpha_mode=args.focal_alpha_mode,
             num_classes=num_classes,
             train_labels=y_train,
+            warmup_epochs=args.warmup_epochs,
         )
 
     weights_name = 'stgcn_gym99_coco18_2s.pth' if args.use_two_stream else 'stgcn_gym99_coco18.pth'
