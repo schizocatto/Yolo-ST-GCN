@@ -189,8 +189,11 @@ def train_model(
         focal_alpha=focal_alpha,
     )
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-    scheduler = torch.optim.lr_scheduler.StepLR(
-        optimizer, step_size=scheduler_step, gamma=scheduler_gamma
+    # Keep legacy scheduler args in signature for backward compatibility.
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=max(1, num_epochs),
+        eta_min=0.0,
     )
 
     history: Dict[str, List[float]] = {
@@ -299,8 +302,11 @@ def train_model_preloaded(
         focal_alpha=focal_alpha,
     )
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-    scheduler = torch.optim.lr_scheduler.StepLR(
-        optimizer, step_size=scheduler_step, gamma=scheduler_gamma
+    # Keep legacy scheduler args in signature for backward compatibility.
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=max(1, num_epochs),
+        eta_min=0.0,
     )
 
     history: Dict[str, List[float]] = {
