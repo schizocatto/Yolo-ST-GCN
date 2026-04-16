@@ -3,7 +3,7 @@ train.py
 Training and evaluation loop functions for Model_STGCN.
 """
 
-from typing import Dict, List, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -147,6 +147,8 @@ def train_model(
     device: torch.device,
     scheduler_step: int = 30,
     scheduler_gamma: float = 0.1,
+    checkpoint_every: int = 0,
+    on_checkpoint: Optional[Callable[[int, nn.Module], None]] = None,
 ) -> Dict[str, List[float]]:
     """
     Train `model` for `num_epochs` and return the history dictionary.
@@ -198,6 +200,9 @@ def train_model(
             f"val_loss={val_loss:.4f}  val_acc={val_acc:.4f}  val_f1={val_f1:.4f}"
         )
 
+        if checkpoint_every > 0 and on_checkpoint is not None and ((epoch + 1) % checkpoint_every == 0):
+            on_checkpoint(epoch + 1, model)
+
     return history
 
 
@@ -214,6 +219,8 @@ def train_model_preloaded(
     train_bone_data: torch.Tensor | None = None,
     scheduler_step: int = 30,
     scheduler_gamma: float = 0.1,
+    checkpoint_every: int = 0,
+    on_checkpoint: Optional[Callable[[int, nn.Module], None]] = None,
 ) -> Dict[str, List[float]]:
     """
     Train when full training tensors are preloaded on the target device.
@@ -305,5 +312,8 @@ def train_model_preloaded(
             f"train_loss={train_loss:.4f}  train_acc={train_acc:.4f}  "
             f"val_loss={val_loss:.4f}  val_acc={val_acc:.4f}  val_f1={val_f1:.4f}"
         )
+
+        if checkpoint_every > 0 and on_checkpoint is not None and ((epoch + 1) % checkpoint_every == 0):
+            on_checkpoint(epoch + 1, model)
 
     return history

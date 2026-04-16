@@ -224,5 +224,5 @@ def load_stgcn_weights(model: nn.Module, weights_path: str, device: torch.device
             new_k = new_k.replace(old, new)
         state_dict[new_k] = v
 
-    model.load_state_dict(state_dict)
+    model.load_state_dict(state_dict, strict=False)
     return model.eval()

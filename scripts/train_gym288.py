@@ -56,6 +56,8 @@ def parse_args():
                    help='For quick smoke runs: keep only first N val samples (0 = all).')
     p.add_argument('--use_two_stream', action='store_true',
                    help='Enable 2s-STGCN (joint stream + bone stream with late fusion).')
+    p.add_argument('--save_every_epochs', type=int, default=10,
+                   help='Save periodic checkpoints every N epochs (0 to disable).')
     return p.parse_args()
 
 
@@ -156,6 +158,28 @@ def main():
         if args.use_two_stream
         else Model_STGCN(num_classes=num_classes, joint_spec=args.joint_spec_name)
     ).to(device)
+
+    def save_periodic_checkpoint(epoch_no: int, model_obj: torch.nn.Module) -> None:
+        periodic_name = (
+            f'stgcn_gym288_2s_epoch{epoch_no}.pth'
+            if args.use_two_stream
+            else f'stgcn_gym288_epoch{epoch_no}.pth'
+        )
+        periodic_path = os.path.join(args.out_dir, periodic_name)
+        save_checkpoint(
+            periodic_path,
+            model_obj,
+            metadata={
+                'joint_spec_name': args.joint_spec_name,
+                'use_two_stream': bool(args.use_two_stream),
+                'dataset_format': 'gym288',
+                'num_classes': int(num_classes),
+                'epoch': int(epoch_no),
+                'periodic_checkpoint': True,
+            },
+        )
+        print(f'Saved periodic checkpoint: {periodic_path}')
+
     history = train_model(
         model=model,
         train_loader=train_loader,
@@ -164,6 +188,8 @@ def main():
         lr=args.lr,
         weight_decay=args.weight_decay,
         device=device,
+        checkpoint_every=args.save_every_epochs,
+        on_checkpoint=save_periodic_checkpoint,
     )
 
     weights_name = 'stgcn_gym288_2s.pth' if args.use_two_stream else 'stgcn_gym288.pth'

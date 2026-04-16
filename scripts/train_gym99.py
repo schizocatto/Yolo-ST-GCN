@@ -73,6 +73,8 @@ def parse_args():
                    help='Enable 2s-STGCN (joint stream + bone stream with late fusion).')
     p.add_argument('--train_data_mode', default='standard', choices=['standard', 'preload_vram'],
                    help='standard: DataLoader on host RAM, preload_vram: preload full train tensors to GPU then train.')
+    p.add_argument('--save_every_epochs', type=int, default=10,
+                   help='Save periodic checkpoints every N epochs (0 to disable).')
     return p.parse_args()
 
 
@@ -206,6 +208,28 @@ def main():
         if args.use_two_stream
         else Model_STGCN(num_classes=num_classes, joint_spec=args.joint_spec_name)
     ).to(device)
+
+    def save_periodic_checkpoint(epoch_no: int, model_obj: torch.nn.Module) -> None:
+        periodic_name = (
+            f'stgcn_gym99_coco18_2s_epoch{epoch_no}.pth'
+            if args.use_two_stream
+            else f'stgcn_gym99_coco18_epoch{epoch_no}.pth'
+        )
+        periodic_path = os.path.join(args.out_dir, periodic_name)
+        save_checkpoint(
+            periodic_path,
+            model_obj,
+            metadata={
+                'joint_spec_name': args.joint_spec_name,
+                'use_two_stream': bool(args.use_two_stream),
+                'dataset_format': 'gym99',
+                'num_classes': int(num_classes),
+                'epoch': int(epoch_no),
+                'periodic_checkpoint': True,
+            },
+        )
+        print(f'Saved periodic checkpoint: {periodic_path}')
+
     history = None
     if args.train_data_mode == 'preload_vram':
         if device.type != 'cuda':
@@ -218,6 +242,8 @@ def main():
                 lr=args.lr,
                 weight_decay=args.weight_decay,
                 device=device,
+                checkpoint_every=args.save_every_epochs,
+                on_checkpoint=save_periodic_checkpoint,
             )
         else:
             print('[info] Preloading full train tensors to VRAM...')
@@ -239,6 +265,8 @@ def main():
                 weight_decay=args.weight_decay,
                 device=device,
                 batch_size=args.batch_size,
+                checkpoint_every=args.save_every_epochs,
+                on_checkpoint=save_periodic_checkpoint,
             )
     else:
         history = train_model(
@@ -249,6 +277,8 @@ def main():
             lr=args.lr,
             weight_decay=args.weight_decay,
             device=device,
+            checkpoint_every=args.save_every_epochs,
+            on_checkpoint=save_periodic_checkpoint,
         )
 
     weights_name = 'stgcn_gym99_coco18_2s.pth' if args.use_two_stream else 'stgcn_gym99_coco18.pth'

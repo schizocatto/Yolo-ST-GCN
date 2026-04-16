@@ -138,7 +138,7 @@ def main():
             f"[warning] Checkpoint joint_spec={ckpt_spec} but inference joint_spec={args.joint_spec_name}. "
             "This may fail or degrade results."
         )
-    model.load_state_dict(state_dict)
+    model.load_state_dict(state_dict, strict=False)
     model.eval()
 
     loader = DataLoader(

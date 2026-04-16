@@ -61,6 +61,8 @@ def parse_args():
                    help='Number of DataLoader workers for both train/val (supports alias --num_wokers).')
     p.add_argument('--use_two_stream', action='store_true',
                    help='Enable 2s-STGCN (joint stream + bone stream with late fusion).')
+    p.add_argument('--save_every_epochs', type=int, default=10,
+                   help='Save periodic checkpoints every N epochs (0 to disable).')
     return p.parse_args()
 
 
@@ -134,6 +136,27 @@ def main():
         else Model_STGCN(joint_spec=args.joint_spec_name)
     ).to(device)
 
+    def save_periodic_checkpoint(epoch_no: int, model_obj: torch.nn.Module) -> None:
+        periodic_name = (
+            f'stgcn_penn_action_2s_epoch{epoch_no}.pth'
+            if args.use_two_stream
+            else f'stgcn_penn_action_epoch{epoch_no}.pth'
+        )
+        periodic_path = os.path.join(args.out_dir, periodic_name)
+        save_checkpoint(
+            periodic_path,
+            model_obj,
+            metadata={
+                'joint_spec_name': args.joint_spec_name,
+                'use_two_stream': bool(args.use_two_stream),
+                'dataset_format': args.dataset_format,
+                'num_classes': len(EXERCISE_CLASSES),
+                'epoch': int(epoch_no),
+                'periodic_checkpoint': True,
+            },
+        )
+        print(f'Periodic checkpoint saved: {periodic_path}')
+
     # ── Train ────────────────────────────────────────────────────────────
     history = train_model(
         model, train_loader, val_loader,
@@ -141,6 +164,8 @@ def main():
         lr=args.lr,
         weight_decay=args.weight_decay,
         device=device,
+        checkpoint_every=args.save_every_epochs,
+        on_checkpoint=save_periodic_checkpoint,
     )
 
     # ── Save weights ─────────────────────────────────────────────────────

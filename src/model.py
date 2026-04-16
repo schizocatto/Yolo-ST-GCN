@@ -22,6 +22,7 @@ class STGCN_Block(nn.Module):
         stride: int = 1,
         residual: bool = True,
         edge_importance: bool = False,
+        dropout_prob: float = 0.0,
     ):
         super().__init__()
         self.K = A.size(0)
@@ -33,6 +34,7 @@ class STGCN_Block(nn.Module):
             self.edge_weight = 1.0
 
         self.gcn = nn.Conv2d(in_ch, out_ch * self.K, kernel_size=1)
+        self.gcn_bn = nn.BatchNorm2d(out_ch)
         self.tcn = nn.Conv2d(
             out_ch,
             out_ch,
@@ -40,6 +42,7 @@ class STGCN_Block(nn.Module):
             padding=(4, 0),
             stride=(stride, 1),
         )
+        self.tcn_bn = nn.BatchNorm2d(out_ch)
 
         if not residual:
             self.res = lambda x: 0
@@ -49,6 +52,7 @@ class STGCN_Block(nn.Module):
             self.res = nn.Conv2d(in_ch, out_ch, kernel_size=1, stride=(stride, 1))
 
         self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(p=dropout_prob) if dropout_prob > 0 else nn.Identity()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         n, c, t, v = x.size()
@@ -57,9 +61,11 @@ class STGCN_Block(nn.Module):
         x = self.gcn(x).view(n, self.K, -1, t, v)
         weighted_A = self.A * self.edge_weight
         x = torch.einsum('nkctv,kvw->nctw', x, weighted_A)
+        x = self.gcn_bn(x)
         x = self.tcn(x)
+        x = self.tcn_bn(x)
 
-        return self.relu(x + r)
+        return self.dropout(self.relu(x + r))
 
 
 class Model_STGCN(nn.Module):
@@ -71,6 +77,8 @@ class Model_STGCN(nn.Module):
         in_channels: int = IN_CHANNELS,
         joint_spec: str = 'penn14',
         edge_importance: bool = True,
+        block_dropout: float = 0.2,
+        classifier_dropout: float = 0.3,
     ):
         super().__init__()
         self.graph = GraphSkeleton(joint_spec=joint_spec)
@@ -79,18 +87,21 @@ class Model_STGCN(nn.Module):
         self.data_bn = nn.BatchNorm1d(in_channels * self.graph.num_node)
 
         self.st_gcn_networks = nn.ModuleList([
-            STGCN_Block(in_channels, 64, A, residual=False, edge_importance=edge_importance),
-            STGCN_Block(64, 64, A, edge_importance=edge_importance),
-            STGCN_Block(64, 64, A, edge_importance=edge_importance),
-            STGCN_Block(64, 64, A, edge_importance=edge_importance),
-            STGCN_Block(64, 128, A, stride=2, edge_importance=edge_importance),
-            STGCN_Block(128, 128, A, edge_importance=edge_importance),
-            STGCN_Block(128, 128, A, edge_importance=edge_importance),
-            STGCN_Block(128, 256, A, stride=2, edge_importance=edge_importance),
-            STGCN_Block(256, 256, A, edge_importance=edge_importance),
-            STGCN_Block(256, 256, A, edge_importance=edge_importance),
+            STGCN_Block(in_channels, 64, A, residual=False, edge_importance=edge_importance, dropout_prob=block_dropout),
+            STGCN_Block(64, 64, A, edge_importance=edge_importance, dropout_prob=block_dropout),
+            STGCN_Block(64, 64, A, edge_importance=edge_importance, dropout_prob=block_dropout),
+            STGCN_Block(64, 64, A, edge_importance=edge_importance, dropout_prob=block_dropout),
+            STGCN_Block(64, 128, A, stride=2, edge_importance=edge_importance, dropout_prob=block_dropout),
+            STGCN_Block(128, 128, A, edge_importance=edge_importance, dropout_prob=block_dropout),
+            STGCN_Block(128, 128, A, edge_importance=edge_importance, dropout_prob=block_dropout),
+            STGCN_Block(128, 256, A, stride=2, edge_importance=edge_importance, dropout_prob=block_dropout),
+            STGCN_Block(256, 256, A, edge_importance=edge_importance, dropout_prob=block_dropout),
+            STGCN_Block(256, 256, A, edge_importance=edge_importance, dropout_prob=block_dropout),
         ])
 
+        self.classifier_dropout = (
+            nn.Dropout(p=classifier_dropout) if classifier_dropout > 0 else nn.Identity()
+        )
         self.fcn = nn.Conv2d(256, num_classes, kernel_size=1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -105,6 +116,7 @@ class Model_STGCN(nn.Module):
             x = gcn(x)
 
         x = F.avg_pool2d(x, x.size()[2:])
+        x = self.classifier_dropout(x)
         x = x.view(n, m, -1, 1, 1).mean(dim=1)
         x = self.fcn(x)
         return x.view(x.size(0), -1)
