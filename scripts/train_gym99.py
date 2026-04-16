@@ -38,6 +38,7 @@ from src.dataset import PennActionDataset
 from src.experiment_config import apply_overrides, load_experiment_config
 from src.gym99_builder import build_gym99_from_gym288_pickle
 from src.gym99_dataset import build_gym99_data_tensors, infer_num_gym99_classes
+from src.losses import build_classification_criterion, compute_smoothed_alpha
 from src.model import Model_STGCN
 from src.train import eval_epoch, train_model, train_model_preloaded
 from src.two_stream_stgcn import TwoStream_STGCN
@@ -75,6 +76,12 @@ def parse_args():
                    help='standard: DataLoader on host RAM, preload_vram: preload full train tensors to GPU then train.')
     p.add_argument('--save_every_epochs', type=int, default=10,
                    help='Save periodic checkpoints every N epochs (0 to disable).')
+    p.add_argument('--loss_name', default='ce', choices=['ce', 'cross_entropy', 'focal'],
+                   help='Classification loss type.')
+    p.add_argument('--focal_gamma', type=float, default=2.0,
+                   help='Focal Loss gamma parameter.')
+    p.add_argument('--focal_alpha_mode', default='none', choices=['none', 'inverse', 'sqrt_inverse'],
+                   help='Class alpha weighting mode for focal loss.')
     return p.parse_args()
 
 
@@ -164,6 +171,10 @@ def main():
     num_classes = args.num_classes if args.num_classes > 0 else inferred_classes
     print(f'num_classes={num_classes} (inferred={inferred_classes})')
 
+    focal_alpha = None
+    if args.loss_name == 'focal' and args.focal_alpha_mode != 'none':
+        focal_alpha = compute_smoothed_alpha(y_train, num_classes=num_classes, mode=args.focal_alpha_mode)
+
     # This dataset is fully materialized in RAM; extra workers often slow Colab due to IPC overhead.
     effective_workers = args.num_workers
     if args.num_workers > 0:
@@ -244,6 +255,11 @@ def main():
                 device=device,
                 checkpoint_every=args.save_every_epochs,
                 on_checkpoint=save_periodic_checkpoint,
+                loss_name=args.loss_name,
+                focal_gamma=args.focal_gamma,
+                focal_alpha_mode=args.focal_alpha_mode,
+                num_classes=num_classes,
+                train_labels=y_train,
             )
         else:
             print('[info] Preloading full train tensors to VRAM...')
@@ -267,6 +283,10 @@ def main():
                 batch_size=args.batch_size,
                 checkpoint_every=args.save_every_epochs,
                 on_checkpoint=save_periodic_checkpoint,
+                loss_name=args.loss_name,
+                focal_gamma=args.focal_gamma,
+                focal_alpha_mode=args.focal_alpha_mode,
+                num_classes=num_classes,
             )
     else:
         history = train_model(
@@ -279,6 +299,11 @@ def main():
             device=device,
             checkpoint_every=args.save_every_epochs,
             on_checkpoint=save_periodic_checkpoint,
+            loss_name=args.loss_name,
+            focal_gamma=args.focal_gamma,
+            focal_alpha_mode=args.focal_alpha_mode,
+            num_classes=num_classes,
+            train_labels=y_train,
         )
 
     weights_name = 'stgcn_gym99_coco18_2s.pth' if args.use_two_stream else 'stgcn_gym99_coco18.pth'
@@ -295,8 +320,13 @@ def main():
     )
     print(f'Saved weights: {weights_path}')
 
-    import torch.nn as nn
-    _, _, _, preds, gt = eval_epoch(model, val_loader, nn.CrossEntropyLoss(), device)
+    eval_criterion = build_classification_criterion(
+        loss_name=args.loss_name,
+        device=device,
+        focal_gamma=args.focal_gamma,
+        focal_alpha=focal_alpha,
+    )
+    _, _, _, preds, gt = eval_epoch(model, val_loader, eval_criterion, device)
 
     top1 = accuracy_score(gt, preds)
     macro_f1 = f1_score(gt, preds, average='macro', zero_division=0)

@@ -10,5 +10,8 @@
   "weight_decay": 0.0001,
   "num_workers": 0,
   "max_train_samples": 2048,
-  "max_val_samples": 512
+  "max_val_samples": 512,
+  "loss_name": "focal",
+  "focal_gamma": 2.0,
+  "focal_alpha_mode": "sqrt_inverse"
 }

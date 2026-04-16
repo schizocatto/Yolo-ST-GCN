@@ -12,6 +12,8 @@ from sklearn.metrics import accuracy_score, f1_score
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from src.losses import build_classification_criterion, compute_smoothed_alpha
+
 
 # ---------------------------------------------------------------------------
 # Single-epoch helpers
@@ -149,6 +151,11 @@ def train_model(
     scheduler_gamma: float = 0.1,
     checkpoint_every: int = 0,
     on_checkpoint: Optional[Callable[[int, nn.Module], None]] = None,
+    loss_name: str = 'ce',
+    focal_gamma: float = 2.0,
+    focal_alpha_mode: str = 'none',
+    num_classes: Optional[int] = None,
+    train_labels: Optional[torch.Tensor | np.ndarray] = None,
 ) -> Dict[str, List[float]]:
     """
     Train `model` for `num_epochs` and return the history dictionary.
@@ -157,7 +164,30 @@ def train_model(
     -------
     history : dict with keys train_loss, val_loss, train_acc, val_acc, val_f1
     """
-    criterion = nn.CrossEntropyLoss()
+    labels_for_alpha = train_labels
+    if labels_for_alpha is None and hasattr(train_loader.dataset, 'labels'):
+        labels_for_alpha = getattr(train_loader.dataset, 'labels')
+
+    focal_alpha = None
+    if loss_name.strip().lower() == 'focal' and focal_alpha_mode.strip().lower() != 'none':
+        inferred_num_classes = num_classes
+        if inferred_num_classes is None:
+            if labels_for_alpha is None:
+                raise ValueError('num_classes or train_labels is required for focal alpha smoothing.')
+            labels_tensor = labels_for_alpha if isinstance(labels_for_alpha, torch.Tensor) else torch.tensor(labels_for_alpha)
+            inferred_num_classes = int(labels_tensor.max().item()) + 1
+        focal_alpha = compute_smoothed_alpha(
+            labels=labels_for_alpha,
+            num_classes=int(inferred_num_classes),
+            mode=focal_alpha_mode,
+        )
+
+    criterion = build_classification_criterion(
+        loss_name=loss_name,
+        device=device,
+        focal_gamma=focal_gamma,
+        focal_alpha=focal_alpha,
+    )
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.StepLR(
         optimizer, step_size=scheduler_step, gamma=scheduler_gamma
@@ -221,6 +251,10 @@ def train_model_preloaded(
     scheduler_gamma: float = 0.1,
     checkpoint_every: int = 0,
     on_checkpoint: Optional[Callable[[int, nn.Module], None]] = None,
+    loss_name: str = 'ce',
+    focal_gamma: float = 2.0,
+    focal_alpha_mode: str = 'none',
+    num_classes: Optional[int] = None,
 ) -> Dict[str, List[float]]:
     """
     Train when full training tensors are preloaded on the target device.
@@ -249,7 +283,21 @@ def train_model_preloaded(
     if train_bone_data is not None and (not _is_same_device_family(train_bone_data, device)):
         raise ValueError('train_bone_data must be on the same device passed to train_model_preloaded.')
 
-    criterion = nn.CrossEntropyLoss()
+    focal_alpha = None
+    if loss_name.strip().lower() == 'focal' and focal_alpha_mode.strip().lower() != 'none':
+        inferred_num_classes = int(num_classes) if num_classes is not None else int(train_labels.max().item()) + 1
+        focal_alpha = compute_smoothed_alpha(
+            labels=train_labels,
+            num_classes=inferred_num_classes,
+            mode=focal_alpha_mode,
+        )
+
+    criterion = build_classification_criterion(
+        loss_name=loss_name,
+        device=device,
+        focal_gamma=focal_gamma,
+        focal_alpha=focal_alpha,
+    )
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.StepLR(
         optimizer, step_size=scheduler_step, gamma=scheduler_gamma

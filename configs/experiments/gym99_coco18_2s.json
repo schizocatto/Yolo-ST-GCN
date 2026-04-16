@@ -5,5 +5,8 @@
   "batch_size": 256,
   "lr": 0.001,
   "weight_decay": 0.0001,
-  "num_workers": 2
+  "num_workers": 2,
+  "loss_name": "focal",
+  "focal_gamma": 2.0,
+  "focal_alpha_mode": "sqrt_inverse"
 }

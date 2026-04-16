@@ -35,6 +35,7 @@ from src.config import EXERCISE_CLASSES
 from src.checkpointing import save_checkpoint
 from src.dataset import build_data_tensors, PennActionDataset
 from src.experiment_config import apply_overrides, load_experiment_config
+from src.losses import build_classification_criterion, compute_smoothed_alpha
 from src.model import Model_STGCN
 from src.two_stream_stgcn import TwoStream_STGCN
 from src.train import train_model, eval_epoch
@@ -63,6 +64,12 @@ def parse_args():
                    help='Enable 2s-STGCN (joint stream + bone stream with late fusion).')
     p.add_argument('--save_every_epochs', type=int, default=10,
                    help='Save periodic checkpoints every N epochs (0 to disable).')
+    p.add_argument('--loss_name', default='ce', choices=['ce', 'cross_entropy', 'focal'],
+                   help='Classification loss type.')
+    p.add_argument('--focal_gamma', type=float, default=2.0,
+                   help='Focal Loss gamma parameter.')
+    p.add_argument('--focal_alpha_mode', default='none', choices=['none', 'inverse', 'sqrt_inverse'],
+                   help='Class alpha weighting mode for focal loss.')
     return p.parse_args()
 
 
@@ -99,6 +106,10 @@ def main():
     if args.use_two_stream:
         B_train = bone_data[flags == 1]
         B_val = bone_data[flags == 0]
+
+    focal_alpha = None
+    if args.loss_name == 'focal' and args.focal_alpha_mode != 'none':
+        focal_alpha = compute_smoothed_alpha(y_train, num_classes=len(EXERCISE_CLASSES), mode=args.focal_alpha_mode)
 
     train_loader = DataLoader(
         PennActionDataset(
@@ -166,6 +177,11 @@ def main():
         device=device,
         checkpoint_every=args.save_every_epochs,
         on_checkpoint=save_periodic_checkpoint,
+        loss_name=args.loss_name,
+        focal_gamma=args.focal_gamma,
+        focal_alpha_mode=args.focal_alpha_mode,
+        num_classes=len(EXERCISE_CLASSES),
+        train_labels=y_train,
     )
 
     # ── Save weights ─────────────────────────────────────────────────────
@@ -184,8 +200,13 @@ def main():
     print(f'Model saved to {weights_path}')
 
     # ── Final evaluation ─────────────────────────────────────────────────
-    import torch.nn as nn
-    _, _, _, preds, gt = eval_epoch(model, val_loader, nn.CrossEntropyLoss(), device)
+    eval_criterion = build_classification_criterion(
+        loss_name=args.loss_name,
+        device=device,
+        focal_gamma=args.focal_gamma,
+        focal_alpha=focal_alpha,
+    )
+    _, _, _, preds, gt = eval_epoch(model, val_loader, eval_criterion, device)
     print('\n--- Classification Report ---')
     print(classification_report(gt, preds, target_names=EXERCISE_CLASSES, zero_division=0))
 
