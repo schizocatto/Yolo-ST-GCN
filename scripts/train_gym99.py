@@ -234,6 +234,14 @@ def main():
         else Model_STGCN(num_classes=num_classes, joint_spec=args.joint_spec_name)
     ).to(device)
 
+    if torch.cuda.device_count() > 1:
+        print(f'[info] Using {torch.cuda.device_count()} GPUs via DataParallel')
+        model = torch.nn.DataParallel(model)
+
+    def _unwrap(m: torch.nn.Module) -> torch.nn.Module:
+        """Return the underlying module, stripping DataParallel if present."""
+        return m.module if isinstance(m, torch.nn.DataParallel) else m
+
     def save_periodic_checkpoint(epoch_no: int, model_obj: torch.nn.Module) -> None:
         periodic_name = (
             f'stgcn_gym99_coco18_2s_epoch{epoch_no}.pth'
@@ -243,7 +251,7 @@ def main():
         periodic_path = os.path.join(args.out_dir, periodic_name)
         save_checkpoint(
             periodic_path,
-            model_obj,
+            _unwrap(model_obj),
             metadata={
                 'joint_spec_name': args.joint_spec_name,
                 'use_two_stream': bool(args.use_two_stream),
@@ -327,7 +335,7 @@ def main():
     weights_path = os.path.join(args.out_dir, weights_name)
     save_checkpoint(
         weights_path,
-        model,
+        _unwrap(model),
         metadata={
             'joint_spec_name': args.joint_spec_name,
             'use_two_stream': bool(args.use_two_stream),
