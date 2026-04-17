@@ -101,6 +101,10 @@ def parse_args():
                    help='Use the smart class-imbalance aware SkeletonFeeder instead of basic dataset.')
     p.add_argument('--use_weighted_sampler', action='store_true',
                    help='Use WeightedRandomSampler to oversample minority classes. Useful with --use_augment_feeder.')
+    p.add_argument('--aug_config_path', default='', type=str,
+                   help='Path to a JSON file containing custom augmentation policy overwriting SkeletonFeeder defaults.')
+    p.add_argument('--oversample_ratio', type=float, default=1.0,
+                   help='Multiplier for samples drawn per epoch. E.g. 2.0 generates twice the augmented variants.')
     p.add_argument('--apparatus', default='all', choices=['all', 'VT', 'FX', 'BB', 'UB'],
                    help=(
                        'Filter dataset to a single apparatus for Expert training. '
@@ -259,6 +263,13 @@ def main():
             SkeletonFeeder.PENN14_FLIP_PAIRS if args.joint_spec_name == 'penn14'
             else None  # Adjust if COCO18 flip pairs are needed
         )
+        custom_policy = None
+        if args.aug_config_path:
+            with open(args.aug_config_path, 'r') as f:
+                raw_policy = json.load(f)
+                custom_policy = {int(k): v for k, v in raw_policy.items()}
+            print(f'[info] Loaded custom augmentation policy from: {args.aug_config_path}')
+
         train_ds, val_ds = build_feeder_pair(
             train_data=X_train,
             train_labels=y_train,
@@ -268,6 +279,7 @@ def main():
             val_bone=B_val,
             include_bone=args.use_two_stream,
             flip_pairs=flip_pairs,
+            custom_policy=custom_policy,
             verbose=True,
         )
     else:
@@ -280,7 +292,15 @@ def main():
             include_bone=args.use_two_stream, joint_spec_name=args.joint_spec_name
         )
 
-    sampler = make_weighted_sampler(train_ds) if args.use_weighted_sampler else None
+    sampler = None
+    target_samples = int(len(train_ds) * args.oversample_ratio)
+    if args.use_weighted_sampler:
+        sampler = make_weighted_sampler(train_ds, num_samples=target_samples)
+    elif args.oversample_ratio != 1.0:
+        # Fallback to standard random sampler with replacement if weighted is not requested
+        from torch.utils.data import RandomSampler
+        sampler = RandomSampler(train_ds, replacement=True, num_samples=target_samples)
+
     shuffle = (sampler is None)
 
     train_loader = DataLoader(
