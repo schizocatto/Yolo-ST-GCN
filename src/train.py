@@ -16,6 +16,31 @@ from src.losses import build_classification_criterion, compute_smoothed_alpha
 
 
 # ---------------------------------------------------------------------------
+# Optimizer factory
+# ---------------------------------------------------------------------------
+
+def _build_optimizer(
+    model: nn.Module,
+    optimizer_name: str,
+    lr: float,
+    weight_decay: float,
+    sgd_momentum: float = 0.9,
+    sgd_nesterov: bool = True,
+) -> torch.optim.Optimizer:
+    name = optimizer_name.strip().lower()
+    if name in ('adam',):
+        return torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    if name in ('adamw',):
+        return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    if name in ('sgd',):
+        return torch.optim.SGD(
+            model.parameters(), lr=lr, momentum=sgd_momentum,
+            weight_decay=weight_decay, nesterov=sgd_nesterov,
+        )
+    raise ValueError(f"Unsupported optimizer '{optimizer_name}'. Choose: adam | adamw | sgd")
+
+
+# ---------------------------------------------------------------------------
 # Single-epoch helpers
 # ---------------------------------------------------------------------------
 
@@ -158,6 +183,9 @@ def train_model(
     train_labels: Optional[torch.Tensor | np.ndarray] = None,
     start_epoch: int = 0,
     warmup_epochs: int = 0,
+    optimizer_name: str = 'adam',
+    sgd_momentum: float = 0.9,
+    sgd_nesterov: bool = True,
 ) -> Dict[str, List[float]]:
     """
     Train `model` for `num_epochs` and return the history dictionary.
@@ -190,7 +218,8 @@ def train_model(
         focal_gamma=focal_gamma,
         focal_alpha=focal_alpha,
     )
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    optimizer = _build_optimizer(model, optimizer_name, lr, weight_decay, sgd_momentum, sgd_nesterov)
+    print(f'[train] optimizer={optimizer_name}  lr={lr}  weight_decay={weight_decay}')
     if warmup_epochs > 0:
         warmup_ep = min(warmup_epochs, num_epochs - 1)
         cosine_ep = num_epochs - warmup_ep
@@ -278,6 +307,9 @@ def train_model_preloaded(
     num_classes: Optional[int] = None,
     start_epoch: int = 0,
     warmup_epochs: int = 0,
+    optimizer_name: str = 'adam',
+    sgd_momentum: float = 0.9,
+    sgd_nesterov: bool = True,
 ) -> Dict[str, List[float]]:
     """
     Train when full training tensors are preloaded on the target device.

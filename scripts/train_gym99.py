@@ -87,6 +87,12 @@ def parse_args():
                    help='Apply per-sample bounding box normalization to skeleton coordinates before training.')
     p.add_argument('--warmup_epochs', type=int, default=0,
                    help='Linear LR warmup epochs before cosine decay (0 = cosine only).')
+    p.add_argument('--optimizer', default='adam', choices=['adam', 'adamw', 'sgd'],
+                   help='Optimizer: adam | adamw | sgd.')
+    p.add_argument('--sgd_momentum', type=float, default=0.9,
+                   help='Momentum for SGD optimizer.')
+    p.add_argument('--sgd_nesterov', action='store_true', default=True,
+                   help='Enable Nesterov momentum for SGD (default: True).')
     return p.parse_args()
 
 
@@ -275,6 +281,9 @@ def main():
                 num_classes=num_classes,
                 train_labels=y_train,
                 warmup_epochs=args.warmup_epochs,
+                optimizer_name=args.optimizer,
+                sgd_momentum=args.sgd_momentum,
+                sgd_nesterov=args.sgd_nesterov,
             )
         else:
             print('[info] Preloading full train tensors to VRAM...')
@@ -303,6 +312,9 @@ def main():
                 focal_alpha_mode=args.focal_alpha_mode,
                 num_classes=num_classes,
                 warmup_epochs=args.warmup_epochs,
+                optimizer_name=args.optimizer,
+                sgd_momentum=args.sgd_momentum,
+                sgd_nesterov=args.sgd_nesterov,
             )
     else:
         history = train_model(
@@ -321,6 +333,9 @@ def main():
             num_classes=num_classes,
             train_labels=y_train,
             warmup_epochs=args.warmup_epochs,
+            optimizer_name=args.optimizer,
+            sgd_momentum=args.sgd_momentum,
+            sgd_nesterov=args.sgd_nesterov,
         )
 
     weights_name = 'stgcn_gym99_coco18_2s.pth' if args.use_two_stream else 'stgcn_gym99_coco18.pth'
