@@ -40,11 +40,11 @@ def center_normalize(tensor: np.ndarray, center_joint_idx: int) -> np.ndarray:
     Frame-by-frame center normalization (ST-GCN paper style).
     
     Moves the origin (0,0) to the center joint for every single frame independently.
-    This makes the pose invariant to absolute screen coordinates per frame.
+    Preserves zero-padding for missing joints/frames.
 
     Parameters
     ----------
-    tensor : float32 ndarray (N, 2, T, V, M)
+    tensor : float32 ndarray (N, C, T, V, M) - typically C=2 or 3 (x, y, score)
     center_joint_idx : int
 
     Returns
@@ -52,14 +52,25 @@ def center_normalize(tensor: np.ndarray, center_joint_idx: int) -> np.ndarray:
     normalized copy with same shape and dtype
     """
     out = tensor.copy()
-    # Find the (x, y) coords of the center joint for all N, T, M
-    # Shape of out[:, :, :, center_joint_idx:center_joint_idx+1, :] is (N, 2, T, 1, M)
+    
+    # Bước 1: Tạo mask để tìm những khớp hợp lệ (không phải là (0,0))
+    # Check trên 2 kênh đầu tiên (X và Y). Nếu cả 2 đều là 0 -> Khớp bị mất/Padding
+    # mask có shape (N, 1, T, V, M)
+    valid_mask = (out[:, 0:2, :, :, :] != 0.0).any(axis=1, keepdims=True)
+    
+    # Lấy tọa độ của khớp trung tâm: shape (N, C, T, 1, M)
     centers = out[:, :, :, center_joint_idx:center_joint_idx+1, :]
     
-    # Subtract center from all joints
-    return (out - centers).astype(tensor.dtype)
-
-
+    # Bước 2: Trừ đi tọa độ tâm (broadcasting)
+    # Lưu ý: Nếu tensor có kênh độ tin cậy (confidence score) ở C=2, 
+    # bạn chỉ nên trừ tâm cho kênh X, Y (C=0 và C=1)
+    out[:, 0:2, :, :, :] = out[:, 0:2, :, :, :] - centers[:, 0:2, :, :, :]
+    
+    # Bước 3: Áp dụng mask để đưa các khớp bị lỗi/padding về lại 0.0
+    out = out * valid_mask
+    
+    return out.astype(tensor.dtype)
+    
 
 def add_virtual_center_joint(kpts: np.ndarray) -> np.ndarray:
     """
