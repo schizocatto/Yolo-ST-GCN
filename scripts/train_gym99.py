@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.config import GYM99_NUM_CLASSES
 from src.checkpointing import load_checkpoint, save_checkpoint
-from src.skeleton_utils import bbox_normalize
+from src.skeleton_utils import bbox_normalize, center_normalize
 from src.dataset import PennActionDataset
 from src.experiment_config import apply_overrides, load_experiment_config
 from src.gym99_builder import build_gym99_from_gym288_pickle
@@ -78,14 +78,14 @@ def parse_args():
                    help='standard: DataLoader on host RAM, preload_vram: preload full train tensors to GPU then train.')
     p.add_argument('--save_every_epochs', type=int, default=10,
                    help='Save periodic checkpoints every N epochs (0 to disable).')
-    p.add_argument('--loss_name', default='ce', choices=['ce', 'cross_entropy', 'focal'],
-                   help='Classification loss type.')
-    p.add_argument('--focal_gamma', type=float, default=2.0,
-                   help='Focal Loss gamma parameter.')
-    p.add_argument('--focal_alpha_mode', default='none', choices=['none', 'inverse', 'sqrt_inverse'],
-                   help='Class alpha weighting mode for focal loss.')
+    p.add_argument('--loss_name', default='focal', choices=['ce', 'focal', 'dice'],
+                   help='Loss function (default: focal)')
+    p.add_argument('--focal_alpha_mode', default='sqrt_inverse', choices=['uniform', 'inverse', 'sqrt_inverse'],
+                   help='Alpha weighting strategy for Focal Loss (default: sqrt_inverse)')
     p.add_argument('--bbox_norm', action='store_true',
-                   help='Apply per-sample bounding box normalization to skeleton coordinates before training.')
+                   help='Normalize skeleton bounding boxes to [0,1] over the entire video')
+    p.add_argument('--center_norm', action='store_true',
+                   help='(ST-GCN original) Move origin (0,0) to center joint frame-by-frame')
     p.add_argument('--warmup_epochs', type=int, default=0,
                    help='Linear LR warmup epochs before cosine decay (0 = cosine only).')
     p.add_argument('--optimizer', default='adam', choices=['adam', 'adamw', 'sgd'],
@@ -238,6 +238,19 @@ def main():
             B_train = bbox_normalize(B_train)
         if B_val is not None:
             B_val = bbox_normalize(B_val)
+
+    if args.center_norm:
+        from src.config import JOINT_NAMES, COCO17_JOINT_NAMES
+        # Automatically detect center joint index based on joint_spec
+        # Penn14: center* is index 13
+        # COCO18: center* is index 17
+        center_idx = 17 if 'coco' in args.joint_spec_name else 13
+        print(f'[info] Applying per-frame center normalization (center joint = {center_idx})...')
+        X_train = center_normalize(X_train, center_idx)
+        X_val   = center_normalize(X_val, center_idx)
+        # We do NOT center normalize bone data because bone data is relative (child - parent)
+        # Adding/subtracting an offset to/from both child and parent cancels out
+
 
     if args.apparatus != 'all':
         lo, hi = APPARATUS_RANGES[args.apparatus]

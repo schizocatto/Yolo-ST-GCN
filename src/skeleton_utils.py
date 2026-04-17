@@ -35,6 +35,32 @@ def bbox_normalize(tensor: np.ndarray, eps: float = 1e-6) -> np.ndarray:
     return ((out - lo) / (hi - lo + eps)).astype(tensor.dtype)
 
 
+def center_normalize(tensor: np.ndarray, center_joint_idx: int) -> np.ndarray:
+    """
+    Frame-by-frame center normalization (ST-GCN paper style).
+    
+    Moves the origin (0,0) to the center joint for every single frame independently.
+    This makes the pose invariant to absolute screen coordinates per frame.
+
+    Parameters
+    ----------
+    tensor : float32 ndarray (N, 2, T, V, M)
+    center_joint_idx : int
+
+    Returns
+    -------
+    normalized copy with same shape and dtype
+    """
+    out = tensor.copy()
+    # Find the (x, y) coords of the center joint for all N, T, M
+    # Shape of out[:, :, :, center_joint_idx:center_joint_idx+1, :] is (N, 2, T, 1, M)
+    centers = out[:, :, :, center_joint_idx:center_joint_idx+1, :]
+    
+    # Subtract center from all joints
+    return (out - centers).astype(tensor.dtype)
+
+
+
 def add_virtual_center_joint(kpts: np.ndarray) -> np.ndarray:
     """
     Append virtual center joint (index 13) as mean of joints 1,2,7,8.
