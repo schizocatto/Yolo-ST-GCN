@@ -80,6 +80,8 @@ def parse_args():
                    help='Save periodic checkpoints every N epochs (0 to disable).')
     p.add_argument('--loss_name', default='focal', choices=['ce', 'focal', 'dice'],
                    help='Loss function (default: focal)')
+    p.add_argument('--focal_gamma', type=float, default=2.0,
+                   help='Focal Loss gamma parameter.')
     p.add_argument('--focal_alpha_mode', default='sqrt_inverse', choices=['uniform', 'inverse', 'sqrt_inverse'],
                    help='Alpha weighting strategy for Focal Loss (default: sqrt_inverse)')
     p.add_argument('--bbox_norm', action='store_true',
