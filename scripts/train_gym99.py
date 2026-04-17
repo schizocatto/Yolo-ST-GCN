@@ -111,6 +111,10 @@ def main():
         args = apply_overrides(args, cfg, sys.argv[1:])
 
     should_auto_build = args.auto_build_from_gym288 or (not args.dataset_path and bool(args.gym288_dataset_path))
+    if args.use_augment_feeder and args.train_data_mode == 'preload_vram':
+        # Safety check: preload_vram bypasses the DataLoader __getitem__, so augmentation wouldn't work.
+        print('[warning] Cannot use preload_vram with use_augment_feeder. Falling back to standard mode.')
+        args.train_data_mode = 'standard'
     if should_auto_build:
         if not args.gym288_dataset_path:
             raise ValueError('auto_build_from_gym288 requires --gym288_dataset_path (or config key gym288_dataset_path).')

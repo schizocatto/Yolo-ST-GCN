@@ -274,15 +274,18 @@ def plot_training_curves(
 def plot_confusion_matrix(
     all_labels: List[int],
     all_preds: List[int],
+    classes: Optional[List[str]] = None,
     title: str = 'Confusion Matrix — Validation Set',
     out_dir: Optional[str] = None,
     filename: str = 'confusion_matrix.png',
 ) -> None:
+    if classes is None:
+        classes = EXERCISE_CLASSES
     conf_mat = confusion_matrix(all_labels, all_preds)
     fig, ax  = plt.subplots(figsize=(9, 7))
     sns.heatmap(
         conf_mat, annot=True, fmt='d', cmap='Blues',
-        xticklabels=EXERCISE_CLASSES, yticklabels=EXERCISE_CLASSES,
+        xticklabels=classes, yticklabels=classes,
         linewidths=0.5, linecolor='#f0f0f0', ax=ax,
         cbar_kws={'label': 'count'},
     )
@@ -298,17 +301,20 @@ def plot_confusion_matrix(
 def plot_per_class_f1(
     all_labels: List[int],
     all_preds: List[int],
+    classes: Optional[List[str]] = None,
     out_dir: Optional[str] = None,
     filename: str = 'per_class_f1.png',
 ) -> None:
+    if classes is None:
+        classes = EXERCISE_CLASSES
     f1_per_class = f1_score(all_labels, all_preds, average=None,
-                            labels=list(range(len(EXERCISE_CLASSES))), zero_division=0)
+                            labels=list(range(len(classes))), zero_division=0)
     macro_f1     = float(np.mean(f1_per_class))
     bar_colors   = ['#27ae60' if f >= 0.8 else '#f39c12' if f >= 0.5 else '#e74c3c'
                     for f in f1_per_class]
 
     fig, ax = plt.subplots(figsize=(10, 5))
-    bars = ax.bar(EXERCISE_CLASSES, f1_per_class, color=bar_colors,
+    bars = ax.bar(classes, f1_per_class, color=bar_colors,
                   edgecolor='white', linewidth=1.2)
     ax.axhline(y=macro_f1, color='#2c3e50', linewidth=1.8, linestyle='--')
     ax.set_ylim(0, 1.1)
