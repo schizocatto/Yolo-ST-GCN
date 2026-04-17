@@ -52,9 +52,16 @@ def train_epoch(
     device: torch.device,
     show_progress: bool = False,
     progress_desc: str = 'Train',
+    grad_clip_norm: float = 1.0,
 ) -> Tuple[float, float]:
     """
     Run one training epoch.
+
+    Parameters
+    ----------
+    grad_clip_norm : float
+        Maximum L2-norm for gradient clipping (applied after backward, before
+        optimizer step).  Set to 0 or a negative value to disable clipping.
 
     Returns
     -------
@@ -84,6 +91,8 @@ def train_epoch(
         outputs = model(joint_data, bone_data) if bone_data is not None else model(joint_data)
         loss    = criterion(outputs, batch_labels)
         loss.backward()
+        if grad_clip_norm > 0:
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip_norm)
         optimizer.step()
 
         total_loss += loss.item()
@@ -186,6 +195,7 @@ def train_model(
     optimizer_name: str = 'adam',
     sgd_momentum: float = 0.9,
     sgd_nesterov: bool = True,
+    grad_clip_norm: float = 1.0,
 ) -> Dict[str, List[float]]:
     """
     Train `model` for `num_epochs` and return the history dictionary.
@@ -219,7 +229,8 @@ def train_model(
         focal_alpha=focal_alpha,
     )
     optimizer = _build_optimizer(model, optimizer_name, lr, weight_decay, sgd_momentum, sgd_nesterov)
-    print(f'[train] optimizer={optimizer_name}  lr={lr}  weight_decay={weight_decay}')
+    print(f'[train] optimizer={optimizer_name}  lr={lr}  weight_decay={weight_decay}'
+          f'  grad_clip_norm={grad_clip_norm if grad_clip_norm > 0 else "disabled"}')
     if warmup_epochs > 0:
         warmup_ep = min(warmup_epochs, num_epochs - 1)
         cosine_ep = num_epochs - warmup_ep
@@ -257,6 +268,7 @@ def train_model(
             device,
             show_progress=True,
             progress_desc=f'Epoch {actual_epoch}/{total_epochs} [train]',
+            grad_clip_norm=grad_clip_norm,
         )
         val_loss, val_acc, val_f1, _, _ = eval_epoch(
             model,
@@ -310,6 +322,7 @@ def train_model_preloaded(
     optimizer_name: str = 'adam',
     sgd_momentum: float = 0.9,
     sgd_nesterov: bool = True,
+    grad_clip_norm: float = 1.0,
 ) -> Dict[str, List[float]]:
     """
     Train when full training tensors are preloaded on the target device.
@@ -403,6 +416,8 @@ def train_model_preloaded(
             outputs = model(joint_batch, bone_batch) if bone_batch is not None else model(joint_batch)
             loss = criterion(outputs, label_batch)
             loss.backward()
+            if grad_clip_norm > 0:
+                nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip_norm)
             optimizer.step()
 
             total_loss += loss.item()

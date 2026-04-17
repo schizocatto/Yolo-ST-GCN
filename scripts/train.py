@@ -70,6 +70,9 @@ def parse_args():
                    help='Focal Loss gamma parameter.')
     p.add_argument('--focal_alpha_mode', default='none', choices=['none', 'inverse', 'sqrt_inverse'],
                    help='Class alpha weighting mode for focal loss.')
+    p.add_argument('--grad_clip_norm', type=float, default=1.0,
+                   help='Max gradient L2-norm for clipping (applied after backward, before optimizer step). '
+                        'Set to 0 or negative to disable gradient clipping.')
     return p.parse_args()
 
 
@@ -182,6 +185,7 @@ def main():
         focal_alpha_mode=args.focal_alpha_mode,
         num_classes=len(EXERCISE_CLASSES),
         train_labels=y_train,
+        grad_clip_norm=args.grad_clip_norm,
     )
 
     # ── Save weights ─────────────────────────────────────────────────────

@@ -93,6 +93,9 @@ def parse_args():
                    help='Momentum for SGD optimizer.')
     p.add_argument('--sgd_nesterov', action='store_true', default=True,
                    help='Enable Nesterov momentum for SGD (default: True).')
+    p.add_argument('--grad_clip_norm', type=float, default=1.0,
+                   help='Max gradient L2-norm for clipping (applied after backward, before optimizer step). '
+                        'Set to 0 or negative to disable gradient clipping.')
     return p.parse_args()
 
 
@@ -284,6 +287,7 @@ def main():
                 optimizer_name=args.optimizer,
                 sgd_momentum=args.sgd_momentum,
                 sgd_nesterov=args.sgd_nesterov,
+                grad_clip_norm=args.grad_clip_norm,
             )
         else:
             print('[info] Preloading full train tensors to VRAM...')
@@ -315,6 +319,7 @@ def main():
                 optimizer_name=args.optimizer,
                 sgd_momentum=args.sgd_momentum,
                 sgd_nesterov=args.sgd_nesterov,
+                grad_clip_norm=args.grad_clip_norm,
             )
     else:
         history = train_model(
@@ -336,6 +341,7 @@ def main():
             optimizer_name=args.optimizer,
             sgd_momentum=args.sgd_momentum,
             sgd_nesterov=args.sgd_nesterov,
+            grad_clip_norm=args.grad_clip_norm,
         )
 
     weights_name = 'stgcn_gym99_coco18_2s.pth' if args.use_two_stream else 'stgcn_gym99_coco18.pth'
