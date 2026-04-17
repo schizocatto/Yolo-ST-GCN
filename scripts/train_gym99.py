@@ -101,6 +101,12 @@ def parse_args():
                    help='Use the smart class-imbalance aware SkeletonFeeder instead of basic dataset.')
     p.add_argument('--use_weighted_sampler', action='store_true',
                    help='Use WeightedRandomSampler to oversample minority classes. Useful with --use_augment_feeder.')
+    p.add_argument('--apparatus', default='all', choices=['all', 'VT', 'FX', 'BB', 'UB'],
+                   help=(
+                       'Filter dataset to a single apparatus for Expert training. '
+                       'Labels are remapped to local indices [0, N-1]. '
+                       'VT=0-5 (6 cls), FX=6-40 (35 cls), BB=41-73 (33 cls), UB=74-98 (25 cls), all=99 cls.'
+                   ))
     return p.parse_args()
 
 
@@ -178,6 +184,36 @@ def main():
         B_train = bone_data[train_mask]
         B_val = bone_data[test_mask]
 
+    # ── Apparatus filtering for Expert training ──────────────────────────────
+    APPARATUS_RANGES = {
+        'VT': (0,   5),
+        'FX': (6,  40),
+        'BB': (41, 73),
+        'UB': (74, 98),
+    }
+    apparatus_label_offset = 0  # used for weight filename tagging
+    if args.apparatus != 'all':
+        lo, hi = APPARATUS_RANGES[args.apparatus]
+        apparatus_label_offset = lo
+
+        def _filter(X, y, B):
+            mask = (y >= lo) & (y <= hi)
+            X_f = X[mask]
+            y_f = y[mask] - lo  # remap to [0, hi-lo]
+            B_f = B[mask] if B is not None else None
+            return X_f, y_f, B_f
+
+        X_train, y_train, B_train = _filter(X_train, y_train, B_train)
+        X_val,   y_val,   B_val   = _filter(X_val,   y_val,   B_val)
+        print(
+            f'[apparatus={args.apparatus}] class range [{lo}, {hi}] → '
+            f'local classes [0, {hi - lo}]  '
+            f'train={len(X_train)}  val={len(X_val)}'
+        )
+        if len(X_train) == 0 or len(X_val) == 0:
+            raise RuntimeError(f'Apparatus filter "{args.apparatus}" produced empty split. Check dataset labels.')
+    # ─────────────────────────────────────────────────────────────────────────
+
     if args.max_train_samples > 0:
         n = min(args.max_train_samples, len(X_train))
         X_train, y_train = X_train[:n], y_train[:n]
@@ -199,9 +235,14 @@ def main():
         if B_val is not None:
             B_val = bbox_normalize(B_val)
 
-    inferred_classes = infer_num_gym99_classes(args.dataset_path, fallback=GYM99_NUM_CLASSES)
-    num_classes = args.num_classes if args.num_classes > 0 else inferred_classes
-    print(f'num_classes={num_classes} (inferred={inferred_classes})')
+    if args.apparatus != 'all':
+        lo, hi = APPARATUS_RANGES[args.apparatus]
+        num_classes = hi - lo + 1
+        print(f'num_classes={num_classes} (apparatus={args.apparatus}, local labels 0-{num_classes - 1})')
+    else:
+        inferred_classes = infer_num_gym99_classes(args.dataset_path, fallback=GYM99_NUM_CLASSES)
+        num_classes = args.num_classes if args.num_classes > 0 else inferred_classes
+        print(f'num_classes={num_classes} (inferred={inferred_classes})')
 
     focal_alpha = None
     if args.loss_name == 'focal' and args.focal_alpha_mode != 'none':
@@ -272,10 +313,11 @@ def main():
     ).to(device)
 
     def save_periodic_checkpoint(epoch_no: int, model_obj: torch.nn.Module) -> None:
+        apparatus_suffix = f'_expert_{args.apparatus}' if args.apparatus != 'all' else ''
         periodic_name = (
-            f'stgcn_gym99_coco18_2s_epoch{epoch_no}.pth'
+            f'stgcn_gym99_coco18_2s{apparatus_suffix}_epoch{epoch_no}.pth'
             if args.use_two_stream
-            else f'stgcn_gym99_coco18_epoch{epoch_no}.pth'
+            else f'stgcn_gym99_coco18{apparatus_suffix}_epoch{epoch_no}.pth'
         )
         periodic_path = os.path.join(args.out_dir, periodic_name)
         save_checkpoint(
@@ -286,6 +328,7 @@ def main():
                 'use_two_stream': bool(args.use_two_stream),
                 'dataset_format': 'gym99',
                 'num_classes': int(num_classes),
+                'apparatus': args.apparatus,
                 'epoch': int(epoch_no),
                 'periodic_checkpoint': True,
             },
@@ -372,7 +415,12 @@ def main():
             grad_clip_norm=args.grad_clip_norm,
         )
 
-    weights_name = 'stgcn_gym99_coco18_2s.pth' if args.use_two_stream else 'stgcn_gym99_coco18.pth'
+    apparatus_suffix = f'_expert_{args.apparatus}' if args.apparatus != 'all' else ''
+    weights_name = (
+        f'stgcn_gym99_coco18_2s{apparatus_suffix}.pth'
+        if args.use_two_stream
+        else f'stgcn_gym99_coco18{apparatus_suffix}.pth'
+    )
     weights_path = os.path.join(args.out_dir, weights_name)
     save_checkpoint(
         weights_path,
@@ -382,6 +430,7 @@ def main():
             'use_two_stream': bool(args.use_two_stream),
             'dataset_format': 'gym99',
             'num_classes': int(num_classes),
+            'apparatus': args.apparatus,
         },
     )
     print(f'Saved weights: {weights_path}')
