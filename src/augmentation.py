@@ -139,7 +139,9 @@ def random_move(data: np.ndarray,
         out[0, t, :, :] = cos_a * x - sin_a * y + dx[t]
         if C > 1:
             out[1, t, :, :] = sin_a * x + cos_a * y + dy[t]
-    return out
+    
+    valid_mask = (data[0:2] != 0.0).any(axis=0, keepdims=True)
+    return out * valid_mask
 
 
 def horizontal_flip(data: np.ndarray,
@@ -166,14 +168,16 @@ def random_scale(data: np.ndarray, scale_range: Tuple[float, float] = (0.85, 1.1
     """
     Uniformly scale coordinates by a random factor in [scale_range[0], scale_range[1]].
     """
+    valid_mask = (data[0:2] != 0.0).any(axis=0, keepdims=True)
     factor = np.random.uniform(*scale_range)
-    return data * factor
+    return (data * factor) * valid_mask
 
 
 def random_noise(data: np.ndarray, std: float = 0.01) -> np.ndarray:
     """Add small zero-mean Gaussian noise to joint coordinates."""
+    valid_mask = (data[0:2] != 0.0).any(axis=0, keepdims=True)
     noise = np.random.normal(0.0, std, size=data.shape).astype(data.dtype)
-    return data + noise
+    return (data + noise) * valid_mask
 
 
 def joint_dropout(data: np.ndarray, drop_prob: float = 0.05) -> np.ndarray:
@@ -193,13 +197,14 @@ def random_translate(data: np.ndarray, max_shift: float = 0.05) -> np.ndarray:
     Uniformly translate all joints by a random (dx, dy) offset.
     Simulates subject not being centered in frame.
     """
+    valid_mask = (data[0:2] != 0.0).any(axis=0, keepdims=True)
     out = data.copy()
     dx = np.random.uniform(-max_shift, max_shift)
     out[0] += dx
     if data.shape[0] > 1:
         dy = np.random.uniform(-max_shift, max_shift)
         out[1] += dy
-    return out
+    return out * valid_mask
 
 
 # ---------------------------------------------------------------------------
@@ -216,13 +221,15 @@ def skeleton_mixup(data_a: np.ndarray, data_b: np.ndarray,
     to avoid introducing ambiguous labels.
     """
     lam = np.random.beta(alpha, alpha)
-    return lam * data_a + (1.0 - lam) * data_b
+    valid_mask_a = (data_a[0:2] != 0.0).any(axis=0, keepdims=True)
+    valid_mask_b = (data_b[0:2] != 0.0).any(axis=0, keepdims=True)
+    out = lam * data_a + (1.0 - lam) * data_b
+    return out * (valid_mask_a & valid_mask_b)
 
 
 # ---------------------------------------------------------------------------
 # Composite policy helper
 # ---------------------------------------------------------------------------
-
 def apply_augmentation_policy(
     data: np.ndarray,
     *,
@@ -245,13 +252,13 @@ def apply_augmentation_policy(
 ) -> np.ndarray:
     """
     Apply a stochastic augmentation policy described by keyword flags/probabilities.
-
-    This is the single call site used by the feeder — it keeps the feeder code clean
-    while all augmentation math lives here.
+    (Đã được vá lỗi: Bảo vệ tuyệt đối padding 0.0 khỏi Noise và Scale)
     """
-    out = data
+    out = data.copy()
 
-    # Temporal
+    # ==========================================
+    # 1. TEMPORAL AUGMENTATION (Đổi vị trí frame)
+    # ==========================================
     if random_choose and window_size > 0:
         out = _module_random_choose(out, window_size)
     elif window_size > 0:
@@ -267,24 +274,37 @@ def apply_augmentation_policy(
         factor = np.random.uniform(*subsample_factor_range)
         out = temporal_subsample(out, factor)
 
-    # Spatial
+    # ==========================================
+    # 🛡️ TRẠM KIỂM SOÁT PADDING (MASK)
+    # Lưu ý: Shape của out trong dataset là (C, T, V, M)
+    # Lấy mask kênh X và Y (C=0, 1). Nếu X, Y != 0 thì là True (khớp thật), ngược lại False (padding)
+    # ==========================================
+    valid_mask = (out[0:2] != 0.0).any(axis=0, keepdims=True) # Shape: (1, T, V, M)
+
+    # ==========================================
+    # 2. SPATIAL AUGMENTATION (Biến đổi tọa độ)
+    # ==========================================
     if random_move:
         out = _apply_random_move(out, move_angle, move_scale, move_trans)
+        out = out * valid_mask  # Ép rác về 0
 
     if horizontal_flip_prob > 0 and np.random.rand() < horizontal_flip_prob:
         out = horizontal_flip(out, flip_pairs)
+        # Flip chỉ lật vị trí, không sinh số mới ở vùng 0.0 nên không cần ép mask
 
     if scale_prob > 0 and np.random.rand() < scale_prob:
         out = random_scale(out, scale_range)
+        out = out * valid_mask  # Ép rác về 0
 
     if noise_std > 0:
         out = random_noise(out, noise_std)
+        out = out * valid_mask  # Ép rác do noise về 0
 
     if joint_drop_prob > 0:
         out = joint_dropout(out, joint_drop_prob)
+        # dropout chủ động biến số thật thành 0.0 (che khuất), nên kệ nó
 
     return out
-
 
 # Internal aliases to avoid name collisions with parameter names in
 # apply_augmentation_policy (which shadows built-in names locally).
