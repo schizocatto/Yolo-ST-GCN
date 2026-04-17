@@ -33,6 +33,7 @@ from src.losses import build_classification_criterion, compute_smoothed_alpha
 from src.model import Model_STGCN
 from src.train import eval_epoch, train_model
 from src.two_stream_stgcn import TwoStream_STGCN
+from src.feeder import SkeletonFeeder, build_feeder_pair, make_weighted_sampler
 
 
 def parse_args():
@@ -68,6 +69,10 @@ def parse_args():
     p.add_argument('--grad_clip_norm', type=float, default=1.0,
                    help='Max gradient L2-norm for clipping (applied after backward, before optimizer step). '
                         'Set to 0 or negative to disable gradient clipping.')
+    p.add_argument('--use_augment_feeder', action='store_true',
+                   help='Use the smart class-imbalance aware SkeletonFeeder instead of basic dataset.')
+    p.add_argument('--use_weighted_sampler', action='store_true',
+                   help='Use WeightedRandomSampler to oversample minority classes. Useful with --use_augment_feeder.')
     return p.parse_args()
 
 
@@ -137,28 +142,46 @@ def main():
         print('[info] Using in-memory tensors; forcing num_workers=0 to avoid dataloader overhead.')
         effective_workers = 0
 
-    train_loader = DataLoader(
-        PennActionDataset(
-            X_train,
-            y_train,
-            bone_data=B_train,
+    if args.use_augment_feeder:
+        flip_pairs = (
+            SkeletonFeeder.PENN14_FLIP_PAIRS if args.joint_spec_name == 'penn14'
+            else None  # Adjust if COCO18 flip pairs are needed
+        )
+        train_ds, val_ds = build_feeder_pair(
+            train_data=X_train,
+            train_labels=y_train,
+            val_data=X_val,
+            val_labels=y_val,
+            train_bone=B_train,
+            val_bone=B_val,
             include_bone=args.use_two_stream,
-            joint_spec_name=args.joint_spec_name,
-        ),
+            flip_pairs=flip_pairs,
+            verbose=True,
+        )
+    else:
+        train_ds = PennActionDataset(
+            X_train, y_train, bone_data=B_train,
+            include_bone=args.use_two_stream, joint_spec_name=args.joint_spec_name
+        )
+        val_ds = PennActionDataset(
+            X_val, y_val, bone_data=B_val,
+            include_bone=args.use_two_stream, joint_spec_name=args.joint_spec_name
+        )
+
+    sampler = make_weighted_sampler(train_ds) if args.use_weighted_sampler else None
+    shuffle = (sampler is None)
+
+    train_loader = DataLoader(
+        train_ds,
         batch_size=args.batch_size,
-        shuffle=True,
+        shuffle=shuffle,
+        sampler=sampler,
         drop_last=False,
         num_workers=effective_workers,
         pin_memory=torch.cuda.is_available(),
     )
     val_loader = DataLoader(
-        PennActionDataset(
-            X_val,
-            y_val,
-            bone_data=B_val,
-            include_bone=args.use_two_stream,
-            joint_spec_name=args.joint_spec_name,
-        ),
+        val_ds,
         batch_size=args.batch_size,
         shuffle=False,
         drop_last=False,
