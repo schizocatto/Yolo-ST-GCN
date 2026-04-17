@@ -12,7 +12,7 @@ CLASS_TO_ID = {cls: idx for idx, cls in enumerate(EXERCISE_CLASSES)}
 ID_TO_CLASS = {idx: cls for idx, cls in enumerate(EXERCISE_CLASSES)}
 
 NUM_CLASSES    = len(EXERCISE_CLASSES)
-TARGET_FRAMES  = 64
+TARGET_FRAMES  = 48   # Native to Gym288/Gym99; prevents slow-motion stutter
 NUM_JOINTS     = 14   # 13 Penn Action + 1 virtual center
 IN_CHANNELS    = 2    # (x, y) coordinates
 
