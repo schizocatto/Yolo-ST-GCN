@@ -82,11 +82,11 @@ class TwoStream_STGCN_COCO18(nn.Module):
             edge_importance=edge_importance,
         )
 
-        self.alpha_logit = nn.Parameter(torch.tensor(0.0))
+        # self.alpha_logit = nn.Parameter(torch.tensor(0.0))
 
     def forward(self, joint_data: torch.Tensor, bone_data: torch.Tensor) -> torch.Tensor:
         out_joint = self.joint_stream(joint_data)
         out_bone  = self.bone_stream(bone_data)
 
-        alpha = torch.sigmoid(self.alpha_logit)
-        return alpha * out_joint + (1.0 - alpha) * out_bone
+        # alpha = torch.sigmoid(self.alpha_logit)
+        return 0.5 * out_joint + 0.5 * out_bone
