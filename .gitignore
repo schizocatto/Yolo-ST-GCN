@@ -38,3 +38,10 @@ penn_action/
 
 # Local environment config (copy from .env.example)
 .env
+
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.synctex.gz
+texput.log
