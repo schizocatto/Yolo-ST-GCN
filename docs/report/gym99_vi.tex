@@ -47,14 +47,15 @@ tập con FX của Gym99 -- 35 lớp hành động, 8.235 chuỗi khung xương 
 xuất từ bộ dữ liệu FineGym. Chúng tôi xây dựng đồ thị khung xương 18
 node (COCO-17 cộng một node trung tâm ảo) với chiến lược phân vùng cấu
 hình không gian và tiến hành ba chuỗi thực nghiệm có hệ thống. Mô hình
-đơn luồng cơ sở đạt Acc = 80,55\%, Macro F1 = 79,70\%. Thử nghiệm kết
-hợp đồng thời nhiều kỹ thuật (hai luồng, chuẩn hóa bounding-box, Focal
-Loss, oversample $3\times$) cho kết quả thấp hơn (Acc = 68,64\%) do
-quá khớp nghiêm trọng, cho thấy chuẩn hóa bounding-box loại bỏ thông
-tin tỉ lệ cơ thể quan trọng cho nhận dạng hạt nhỏ. Tìm kiếm độ sâu
-trên kiến trúc hai luồng với chuẩn hóa trung tâm và Focal Loss đạt kết
-quả tốt nhất ở 6 block: \textbf{Acc = 89,68\%, Macro F1 = 87,19\%},
-cải thiện +9,13\% so với mô hình cơ sở.
+đơn luồng cơ sở đạt Best Val Acc = 88,95\%, Macro F1 = 87,41\%. Thử
+nghiệm kết hợp đồng thời nhiều kỹ thuật (hai luồng, chuẩn hóa
+bounding-box, Focal Loss, oversample $3\times$) cho kết quả thấp hơn
+(Best Val Acc = 78,82\%) do quá khớp nghiêm trọng, chỉ ra rằng chuẩn
+hóa bounding-box loại bỏ thông tin tỉ lệ cơ thể quan trọng cho nhận
+dạng hạt nhỏ. Tìm kiếm độ sâu trên kiến trúc hai luồng với chuẩn hóa
+trung tâm, Focal Loss và dừng sớm đạt kết quả tốt nhất ở 6 block
+(\textbf{Best Val Acc = 89,68\%, Macro F1 = 87,19\%}), tương đương mô
+hình cơ sở và vượt đáng kể so với cấu hình kết hợp đầy đủ.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -640,6 +641,12 @@ nhận (35 lớp); các chuỗi khung xương được căn chỉnh thời gian 
 $T = 48$ frame. Chúng tôi tiến hành ba thực nghiệm theo trình tự để
 xác định cấu hình tối ưu:
 
+\textit{Giao thức đánh giá:} Các chỉ số trong bảng kết quả được đo
+trực tiếp trên tập xác nhận trong quá trình huấn luyện sau khi lọc
+các mẫu hỏng (keypoint bằng 0 trên $>5\%$ khung hình và khớp). Đây
+là giao thức thống nhất cho cả ba thực nghiệm, cho phép so sánh trực
+tiếp giữa các cấu hình.
+
 \begin{enumerate}
   \item \textbf{Baseline}: Mô hình đơn luồng với cấu hình tối thiểu.
   \item \textbf{Kết hợp đầy đủ}: Hai luồng cùng nhiều kỹ thuật tăng
@@ -666,11 +673,11 @@ $10^{-4}$.
   \label{fig:baseline_curves}
 \end{figure}
 
-Hình~\ref{fig:baseline_curves} cho thấy mô hình hội tụ ổn định: val
-accuracy đạt đỉnh 88,95\% tại epoch 73 với overfitting nhẹ (train
-99,66\%). Đánh giá độc lập trên tập xác nhận cho kết quả \textbf{Acc
-= 80,55\%}, \textbf{Macro F1 = 79,70\%}. Đây là điểm xuất phát để so
-sánh cho các thực nghiệm tiếp theo.
+Hình~\ref{fig:baseline_curves} cho thấy mô hình hội tụ tốt và liên
+tục qua 80 epoch. Val accuracy đạt đỉnh \textbf{88,95\%} tại epoch
+73; train accuracy leo lên 99,66\%, cho thấy có overfitting nhẹ ở
+giai đoạn cuối. Macro F1 tốt nhất đạt \textbf{87,41\%} tại epoch 67.
+Đây là điểm chuẩn để so sánh cho các thực nghiệm tiếp theo.
 
 \subsection{Thử Nghiệm Kết Hợp Đầy Đủ}
 \label{sec:ver2}
@@ -692,12 +699,13 @@ size 32, weight decay $5 \times 10^{-4}$.
   \label{fig:ver2_curves}
 \end{figure}
 
-Kết quả đánh giá: \textbf{Acc = 68,64\%}, \textbf{Macro F1 = 52,56\%}
---- thấp hơn đáng kể so với baseline. Hình~\ref{fig:ver2_curves} cho
-thấy rõ sự phân kỳ: val accuracy đạt đỉnh 78,82\% tại epoch 25 rồi
-suy giảm về 75,70\% sau 70 epoch, trong khi train accuracy tiếp tục
-tăng lên 99,84\%. Tham số dung hòa hai luồng hội tụ về $\alpha =
-0{,}686$ (joint) và $1 - \alpha = 0{,}314$ (bone).
+Hình~\ref{fig:ver2_curves} cho thấy rõ sự phân kỳ: val accuracy đạt
+đỉnh \textbf{78,82\%} tại epoch 25 rồi suy giảm về 75,70\% sau 70
+epoch --- thấp hơn đáng kể so với baseline (88,95\%) --- trong khi
+train accuracy tiếp tục tăng lên 99,84\%. Macro F1 tốt nhất chỉ đạt
+\textbf{71,30\%} tại epoch 21, cũng thấp hơn nhiều so với baseline
+(87,41\%). Tham số dung hòa hai luồng hội tụ về $\alpha = 0{,}686$
+(joint) và $1 - \alpha = 0{,}314$ (bone).
 
 Phân tích chỉ ra ba nguyên nhân chính: (1)~\texttt{bbox\_norm} co giãn
 tọa độ về $[0,1]$ trong hộp giới hạn mỗi frame, loại bỏ thông tin tỉ
@@ -728,13 +736,13 @@ tối đa 100 epoch, weight decay $5 \times 10^{-4}$, grad clip $= 1{,}0$.
   \label{fig:depth_curves}
 \end{figure*}
 
-Bảng~\ref{tab:depth_results} tổng kết kết quả. Depth = 6 vượt trội ở
-cả hai chỉ số: Best Val Acc = 89,68\% tại epoch 93 và Macro F1 =
-87,19\%. Depth = 8 đứng thứ hai (87,76\% / 84,59\%), trong khi depth
-= 4 đạt kết quả thấp nhất trong nhóm nhưng vẫn vượt mô hình cơ sở
-(85,01\% / 82,77\%). Gap train--val của depth = 6 (9,81\%) nhỏ hơn
-depth = 4 (12,70\%), cho thấy độ sâu trung bình cân bằng tốt hơn giữa
-sức chứa mô hình và khả năng khái quát hóa.
+Bảng~\ref{tab:depth_results} tổng kết kết quả. Trong nhóm hai luồng,
+depth = 6 vượt trội ở cả hai chỉ số: Best Val Acc = 89,68\% tại epoch
+93 và Macro F1 = 87,19\%. Depth = 8 đứng thứ hai (87,76\% / 84,59\%),
+trong khi depth = 4 đạt kết quả thấp nhất trong nhóm (85,01\% /
+82,77\%). Gap train--val của depth = 6 (9,81\%) nhỏ hơn depth = 4
+(12,70\%), cho thấy độ sâu trung bình cân bằng tốt hơn giữa sức chứa
+mô hình và khả năng khái quát hóa.
 
 \begin{table}[!h]
 \caption{Kết quả tìm kiếm độ sâu --- Two-Stream ST-GCN trên tập FX
@@ -764,15 +772,16 @@ sự phân kỳ của thực nghiệm kết hợp đầy đủ
 Bảng~\ref{tab:full_comparison} tổng hợp kết quả ba thực nghiệm.
 
 \begin{table}[!h]
-\caption{So sánh tổng thể các cấu hình thực nghiệm trên tập xác nhận FX}
+\caption{So sánh tổng thể các cấu hình (Best Val Acc và Macro F1 tốt
+         nhất trong quá trình huấn luyện, giao thức thống nhất)}
 \label{tab:full_comparison}
 \centering
 \begin{tabular}{lcc}
 \toprule
-Cấu hình & Acc & Macro F1 \\
+Cấu hình & Best Val Acc & Best Macro F1 \\
 \midrule
-Baseline (1 luồng, center, CE)          & 80,55\% & 79,70\% \\
-Kết hợp đầy đủ (2 luồng, bbox, Focal)  & 68,64\% & 52,56\% \\
+Baseline (1 luồng, center, CE)          & \textbf{88,95\%} & \textbf{87,41\%} \\
+Kết hợp đầy đủ (2 luồng, bbox, Focal)  & 78,82\% & 71,30\% \\
 \midrule
 Depth=4 (2 luồng, center, Focal)        & 85,01\% & 82,77\% \\
 Depth=6 (2 luồng, center, Focal)        & \textbf{89,68\%} & \textbf{87,19\%} \\
@@ -783,23 +792,25 @@ Depth=8 (2 luồng, center, Focal)        & 87,76\% & 84,59\% \\
 
 Ba quan sát chính từ chuỗi thực nghiệm:
 
-\textbf{(1) Chuẩn hóa bbox gây hại cho bài toán này.} Mặc dù
-\texttt{bbox\_norm} giúp bất biến hóa với vị trí và tầm vóc người
-trong nhiều bài toán nhận dạng thô, nó loại bỏ thông tin tỉ lệ tuyệt
-đối giữa các chi --- thông tin cần thiết để phân biệt các động tác FX
-hạt nhỏ. \texttt{center\_norm} bảo toàn tỉ lệ tương đối giữa các
-khớp và phù hợp hơn cho nhiệm vụ này.
+\textbf{(1) Chuẩn hóa bbox gây hại cho bài toán này.} So sánh hai
+cấu hình hai luồng: kết hợp đầy đủ với \texttt{bbox\_norm} chỉ đạt
+Best Val Acc = 78,82\% --- thấp hơn baseline 10,13\%. Trong khi đó,
+depth search với \texttt{center\_norm} đạt kết quả tương đương
+baseline. \texttt{bbox\_norm} co giãn tọa độ về $[0,1]$ trong hộp
+giới hạn mỗi frame, loại bỏ thông tin tỉ lệ tuyệt đối giữa các chi
+--- thông tin cần thiết để phân biệt các động tác FX hạt nhỏ.
 
-\textbf{(2) Kiến trúc hai luồng + Focal Loss cải thiện đáng kể khi cấu
-hình đúng.} So sánh Baseline (80,55\%) với Depth=6 (89,68\%): tăng
-+9,13\% accuracy và +7,49\% Macro F1. Luồng bone bổ sung thông tin tư
-thế tương đối (véc-tơ hướng xương) mà luồng joint không nắm bắt được
-trực tiếp.
+\textbf{(2) Hai luồng + Focal Loss không tự động vượt trội baseline
+khi cấu hình sai.} Dưới cùng giao thức đánh giá, Depth=6 (89,68\% /
+87,19\%) chỉ ngang bằng Baseline (88,95\% / 87,41\%). Kết quả tốt
+của depth search so với kết hợp đầy đủ chủ yếu đến từ việc tránh
+\texttt{bbox\_norm} và oversample $3\times$, kết hợp với dừng sớm ---
+chứ không phải từ kiến trúc hai luồng đơn thuần.
 
-\textbf{(3) Độ sâu 6 block là điểm cân bằng tối ưu.} Depth = 4 thiếu
-sức chứa để mô hình hóa chuỗi thời gian dài; depth = 8 bắt đầu quá
-khớp sớm hơn. Depth = 6 đạt điểm cân bằng giữa khả năng biểu diễn
-và khái quát hóa trên tập FX 35 lớp.
+\textbf{(3) Độ sâu 6 block là điểm cân bằng tối ưu trong khung hai
+luồng.} Depth = 4 thiếu sức chứa để mô hình hóa chuỗi thời gian dài;
+depth = 8 bắt đầu quá khớp sớm hơn. Depth = 6 đạt điểm cân bằng
+tốt nhất giữa khả năng biểu diễn và khái quát hóa.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Kết Luận}
@@ -807,17 +818,18 @@ và khái quát hóa trên tập FX 35 lớp.
 
 Chúng tôi đã trình bày quá trình xây dựng và thực nghiệm có hệ thống
 ST-GCN cho bài toán nhận dạng hành động thể dục tự do hạt nhỏ trên tập
-con FX của Gym99 (35 lớp, 8.235 chuỗi). Kết quả tốt nhất đạt được với
-kiến trúc hai luồng (joint + bone), chuẩn hóa trung tâm, Focal Loss với
-trọng số căn bậc hai nghịch đảo tần suất lớp, và 6 block ST-GCN trên
-mỗi luồng: \textbf{Acc = 89,68\%, Macro F1 = 87,19\%} --- cải thiện
-+9,13\% so với baseline đơn luồng (80,55\%).
+con FX của Gym99 (35 lớp, 8.235 chuỗi). Dưới giao thức đánh giá thống
+nhất, mô hình đơn luồng cơ sở đạt Best Val Acc = 88,95\%, Macro F1 =
+87,41\%. Kiến trúc hai luồng với 6 block, chuẩn hóa trung tâm, Focal
+Loss và dừng sớm đạt kết quả tương đương:
+\textbf{Best Val Acc = 89,68\%, Macro F1 = 87,19\%}.
 
-Thực nghiệm kết hợp đầy đủ cho thấy chuẩn hóa bounding-box gây hại
-trong bài toán nhận dạng hạt nhỏ do loại bỏ thông tin tỉ lệ cơ thể,
-và oversample quá mức cùng với việc thiếu dừng sớm dẫn đến quá khớp
-nghiêm trọng. Dừng sớm đóng vai trò quan trọng để kiểm soát overfitting
-trên tập dữ liệu cỡ vừa với nhiều lớp tương đồng.
+Phát hiện quan trọng nhất là chuẩn hóa bounding-box gây hại nghiêm
+trọng cho nhận dạng hạt nhỏ ($-$10,13\% so với baseline) do loại bỏ
+thông tin tỉ lệ cơ thể. Oversample quá mức ($3\times$) kết hợp với
+thiếu dừng sớm dẫn đến quá khớp sớm và không thể phục hồi. Dừng sớm
+là yếu tố quan trọng để kiểm soát overfitting trên tập dữ liệu cỡ vừa
+với nhiều lớp tương đồng về đặc trưng.
 
 Các hướng nghiên cứu tiếp theo bao gồm: (i)~tích hợp luồng motion (sai
 phân tọa độ theo thời gian) như trong các công trình hậu ST-GCN;
