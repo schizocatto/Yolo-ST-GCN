@@ -272,9 +272,15 @@ def main():
         X_train = bbox_normalize(X_train)
         X_val   = bbox_normalize(X_val)
         if B_train is not None:
-            B_train = bbox_normalize(B_train)
+            from src.skeleton_utils import calculate_bone_data
+            from src.joint_specs import get_joint_spec
+            bone_pairs = get_joint_spec(args.joint_spec_name).bone_pairs
+            B_train = calculate_bone_data(X_train, bone_pairs)
         if B_val is not None:
-            B_val = bbox_normalize(B_val)
+            from src.skeleton_utils import calculate_bone_data
+            from src.joint_specs import get_joint_spec
+            bone_pairs = get_joint_spec(args.joint_spec_name).bone_pairs
+            B_val = calculate_bone_data(X_val, bone_pairs)
 
     if args.center_norm:
         from src.config import JOINT_NAMES, COCO17_JOINT_NAMES
