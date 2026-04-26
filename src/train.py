@@ -196,6 +196,8 @@ def train_model(
     sgd_momentum: float = 0.9,
     sgd_nesterov: bool = True,
     grad_clip_norm: float = 1.0,
+    early_stopping_patience: int = 0,
+    early_stopping_min_delta: float = 1e-4,
 ) -> Dict[str, List[float]]:
     """
     Train `model` for `num_epochs` and return the history dictionary.
@@ -257,6 +259,10 @@ def train_model(
         'train_acc':  [], 'val_acc':  [], 'val_f1': [],
     }
 
+    es_best_val_loss = float('inf')
+    es_patience_counter = 0
+    es_best_state: Optional[dict] = None
+
     total_epochs = start_epoch + num_epochs
     for epoch in range(num_epochs):
         actual_epoch = start_epoch + epoch + 1
@@ -295,6 +301,23 @@ def train_model(
         if checkpoint_every > 0 and on_checkpoint is not None and (actual_epoch % checkpoint_every == 0):
             on_checkpoint(actual_epoch, model)
 
+        if early_stopping_patience > 0:
+            if val_loss < es_best_val_loss - early_stopping_min_delta:
+                es_best_val_loss = val_loss
+                es_patience_counter = 0
+                es_best_state = {k: v.clone() for k, v in model.state_dict().items()}
+            else:
+                es_patience_counter += 1
+                if es_patience_counter >= early_stopping_patience:
+                    print(
+                        f'[early stopping] No val_loss improvement for {es_patience_counter} epochs. '
+                        f'Stopping at epoch {actual_epoch}.'
+                    )
+                    if es_best_state is not None:
+                        model.load_state_dict(es_best_state)
+                        print(f'[early stopping] Restored best weights (val_loss={es_best_val_loss:.4f})')
+                    break
+
     return history
 
 
@@ -323,6 +346,8 @@ def train_model_preloaded(
     sgd_momentum: float = 0.9,
     sgd_nesterov: bool = True,
     grad_clip_norm: float = 1.0,
+    early_stopping_patience: int = 0,
+    early_stopping_min_delta: float = 1e-4,
 ) -> Dict[str, List[float]]:
     """
     Train when full training tensors are preloaded on the target device.
@@ -393,6 +418,10 @@ def train_model_preloaded(
         'train_acc': [], 'val_acc': [], 'val_f1': [],
     }
 
+    es_best_val_loss = float('inf')
+    es_patience_counter = 0
+    es_best_state: Optional[dict] = None
+
     num_samples = int(train_labels.size(0))
     num_batches = max(1, (num_samples + batch_size - 1) // batch_size)
 
@@ -452,5 +481,22 @@ def train_model_preloaded(
 
         if checkpoint_every > 0 and on_checkpoint is not None and (actual_epoch % checkpoint_every == 0):
             on_checkpoint(actual_epoch, model)
+
+        if early_stopping_patience > 0:
+            if val_loss < es_best_val_loss - early_stopping_min_delta:
+                es_best_val_loss = val_loss
+                es_patience_counter = 0
+                es_best_state = {k: v.clone() for k, v in model.state_dict().items()}
+            else:
+                es_patience_counter += 1
+                if es_patience_counter >= early_stopping_patience:
+                    print(
+                        f'[early stopping] No val_loss improvement for {es_patience_counter} epochs. '
+                        f'Stopping at epoch {actual_epoch}.'
+                    )
+                    if es_best_state is not None:
+                        model.load_state_dict(es_best_state)
+                        print(f'[early stopping] Restored best weights (val_loss={es_best_val_loss:.4f})')
+                    break
 
     return history
