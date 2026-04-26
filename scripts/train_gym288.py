@@ -45,7 +45,7 @@ def parse_args():
     p.add_argument('--epochs', type=int, default=30)
     p.add_argument('--batch_size', type=int, default=32)
     p.add_argument('--lr', type=float, default=1e-3)
-    p.add_argument('--weight_decay', type=float, default=1e-4)
+    p.add_argument('--  ', type=float, default=1e-4)
     p.add_argument('--num_classes', type=int, default=0,
                    help='Override class count. 0 = infer from dataset labels')
     p.add_argument('--joint_spec_name', default='penn14', choices=['penn14', 'coco18'],
