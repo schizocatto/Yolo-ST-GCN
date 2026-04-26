@@ -196,6 +196,11 @@ nhãn cục bộ sang nhãn toàn cục (\textit{clabel} $\to$ \textit{glabel});
 (2)~lọc các mẫu trong Gym288 có nhãn toàn cục xuất hiện trong tập 99
 lớp của Gym99; (3)~gán lại nhãn về khoảng $[0, 98]$.
 
+Gym99 bao phủ bốn dụng cụ thể dục: Vault (VT, nhãn $[0,5]$, 6 lớp),
+Floor Exercise (FX, nhãn $[6,40]$, 35 lớp), Balance Beam (BB, nhãn
+$[41,73]$, 33 lớp), và Uneven Bars (UB, nhãn $[74,98]$, 25 lớp).
+Các thực nghiệm trong bài báo này tập trung vào tập con \textbf{FX}.
+
 Bảng~\ref{tab:gym99_stats} tóm tắt đặc điểm của tập dữ liệu sau khi
 xây dựng. Tổng cộng 96,2\% mẫu Gym288 được ánh xạ trực tiếp; phần còn
 lại sử dụng nhãn lân cận ($\pm 1$) để giải quyết lệch chỉ số giữa hai
@@ -214,7 +219,7 @@ Tập huấn luyện          & 27.624 \\
 Tập kiểm tra            & 9.041  \\
 Số lớp hành động        & 99     \\
 Số khớp mỗi frame       & 17 (COCO) + 1 (trung tâm) = 18 \\
-Độ dài chuỗi (sau lấy mẫu lại) & 64 frame \\
+Độ dài chuỗi (sau lấy mẫu lại) & 48 frame \\
 Số mẫu lớp nhỏ nhất     & 79     \\
 Số mẫu lớp lớn nhất     & 2.060  \\
 Tỉ lệ mất cân bằng max/min & $\approx$26$\times$ \\
@@ -227,7 +232,7 @@ Gini coefficient        & 0,438  \\
 
 Bộ chú thích FineGym288 lưu trữ keypoint theo định dạng COCO-17:
 tensor $(1, T, 17, 2)$ với tọa độ pixel trong không gian ảnh gốc
-($1280 \times 720$). Chúng tôi giữ nguyên tất cả 17 khớp bao gồm cả
+($1920 \times 1080$). Chúng tôi giữ nguyên tất cả 17 khớp bao gồm cả
 các điểm mặt (mắt, tai) vì chúng đóng góp vào phân vùng hướng
 tâm/ly tâm của đồ thị. Một \textbf{node trung tâm ảo} (chỉ số 17) được
 thêm vào như trung bình của bốn khớp gốc:
@@ -237,14 +242,67 @@ thêm vào như trung bình của bốn khớp gốc:
     \mathbf{p}_{\text{l\_hip}} + \mathbf{p}_{\text{r\_hip}}
   \bigr).
 \]
-Tensor đầu vào cho ST-GCN có dạng $(N, C{=}2, T{=}64, V{=}18, M{=}1)$
+Tensor đầu vào cho ST-GCN có dạng $(N, C{=}2, T{=}48, V{=}18, M{=}1)$
 trong đó $C$ là số kênh tọa độ $(x, y)$, $T$ là số frame (lấy mẫu lại
-đều về 64), $V$ là số node, và $M$ là số người.
+đều về 48), $V$ là số node, và $M$ là số người.
 
 Nhánh bone được tạo bằng cách tính sai phân véc-tơ theo từng cạnh của
 đồ thị khung xương: với mỗi cạnh $(u, v)$, đặc trưng bone là
 $\mathbf{p}_v - \mathbf{p}_u$ (hướng từ gốc sang ngọn). Điều này tạo
 ra tensor bone cùng hình dạng với tensor joint.
+
+\subsection{Phân Tích Tập Con FX}
+\label{sec:eda_fx}
+
+\textbf{Thống kê tổng quan.}
+Tập FX gồm 35 lớp hành động (nhãn toàn cục $[6,40]$), với 5.824 mẫu
+huấn luyện và 2.411 mẫu kiểm tra (tổng 8.235). So với toàn bộ Gym99,
+mức độ mất cân bằng lớp thấp hơn đáng kể: tỉ lệ max/min là
+$8\times$ (thay vì $26\times$) và Gini = 0,306 (thay vì 0,438), với
+effective number of classes đạt 30,1/35. Hình~\ref{fig:fx_class_dist}
+minh họa phân phối lớp và đường cong Lorenz của tập FX.
+
+\begin{figure}[!ht]
+  \centering
+  \includegraphics[width=\columnwidth]{../figures/FX_train_class_distribution.png}
+  \caption{Phân phối lớp tập con FX: (trái) số mẫu mỗi lớp sắp xếp
+  giảm dần (train xanh / val cam); (giữa) histogram số mẫu/lớp; (phải)
+  đường Lorenz -- Gini = 0,306.}
+  \label{fig:fx_class_dist}
+\end{figure}
+
+\textbf{Phân tích không gian và chuyển động.}
+Tọa độ keypoint gốc nằm trong không gian ảnh pixel ($1920 \times 1080$),
+với tâm khung xương ở vị trí trung bình $(\bar{x} \approx 1088,\,
+\bar{y} \approx 488)$~px. Hình~\ref{fig:fx_velocity} cho thấy các khớp
+chi trên (cổ tay, khuỷu tay) và chi dưới (mắt cá chân, đầu gối) có
+vận tốc trung bình cao hơn đáng kể so với các khớp trục thân (hông,
+vai), phản ánh đặc trưng động học của bài thể dục tự do.
+
+\begin{figure}[!ht]
+  \centering
+  \includegraphics[width=\columnwidth]{../figures/FX_train_per_joint_velocity.png}
+  \caption{Vận tốc tuyệt đối trung bình theo từng khớp COCO-18 trên tập
+  huấn luyện FX. Đỏ = Q3 trở lên (hoạt động nhất); xanh dương = Q1 trở
+  xuống (ít hoạt động nhất).}
+  \label{fig:fx_velocity}
+\end{figure}
+
+\textbf{Khả năng phân tách lớp.}
+Hình~\ref{fig:fx_pca} trình bày PCA hai chiều trên đặc trưng trung bình
+thời gian ($36$ chiều) của 20 lớp phổ biến nhất. Sự chồng chéo lớp cao
+trong không gian 2D xác nhận tính chất fine-grained của tập FX: các bài
+tập tự do có cấu trúc khung xương rất tương đồng, sự khác biệt chủ yếu
+nằm ở thứ tự và pha thời gian của động tác.
+
+\begin{figure}[!ht]
+  \centering
+  \includegraphics[width=0.9\columnwidth]{../figures/FX_train_pca.png}
+  \caption{PCA hai chiều trên 20 lớp phổ biến nhất của tập FX (train).
+  Sự chồng chéo cao giữa các lớp xác nhận tính chất fine-grained của
+  bài toán phân loại.}
+  \label{fig:fx_pca}
+\end{figure}
 
 % ─────────────────────────────────────────────────────────────────────────────
 \clearpage
@@ -286,7 +344,7 @@ $\mathcal{E}$ chia thành hai loại (Hình~\ref{fig:stgcn_graph}):
 giải phẫu (theo cấu trúc COCO-17) cộng thêm 4 cạnh nối node trung tâm
 ảo với hai vai và hai hông.
 
-\begin{figure}[!h]
+\begin{figure}[!ht]
   \centering
   \includegraphics[width=0.85\columnwidth]{../ST-GCN-figures/fig2_spatial_temporal_graph.png}
   \caption{Đồ thị không-thời gian của chuỗi khung xương trong ST-GCN
@@ -457,9 +515,9 @@ dụng trên chiều $C \times V = 2 \times 18 = 36$ để chuẩn hóa tọa đ
 \subsection{Kiến Trúc Hai Luồng}
 \label{sec:twostream}
 
-Luồng joint nhận tensor $\mathbf{X}^{(j)} \in \mathbb{R}^{N \times 2 \times 64 \times 18}$
+Luồng joint nhận tensor $\mathbf{X}^{(j)} \in \mathbb{R}^{N \times 2 \times 48 \times 18}$
 là tọa độ $(x,y)$ của các khớp. Luồng bone nhận tensor
-$\mathbf{X}^{(b)} \in \mathbb{R}^{N \times 2 \times 64 \times 18}$ là
+$\mathbf{X}^{(b)} \in \mathbb{R}^{N \times 2 \times 48 \times 18}$ là
 véc-tơ xương: với mỗi cạnh $(u, v)$ trong đồ thị,
 $\mathbf{x}^{(b)}_v = \mathbf{x}^{(j)}_v - \mathbf{x}^{(j)}_u$.
 Hai mô hình ST-GCN được huấn luyện độc lập với cùng kiến trúc và siêu
