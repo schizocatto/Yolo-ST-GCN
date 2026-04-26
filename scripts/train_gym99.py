@@ -113,6 +113,12 @@ def parse_args():
                        'Labels are remapped to local indices [0, N-1]. '
                        'VT=0-5 (6 cls), FX=6-40 (35 cls), BB=41-73 (33 cls), UB=74-98 (25 cls), all=99 cls.'
                    ))
+    p.add_argument('--model_depth', type=int, default=10, choices=[4, 6, 8, 10],
+                   help=(
+                       'Number of ST-GCN blocks per stream. '
+                       '10 = original (default), 8/6/4 = progressively smaller models. '
+                       'Smaller depths reduce overfitting on limited data (e.g. 35-class FX subset).'
+                   ))
     return p.parse_args()
 
 
@@ -367,17 +373,20 @@ def main():
     )
 
     model = (
-        TwoStream_STGCN(num_classes=num_classes, joint_spec=args.joint_spec_name)
+        TwoStream_STGCN(num_classes=num_classes, joint_spec=args.joint_spec_name, depth=args.model_depth)
         if args.use_two_stream
-        else Model_STGCN(num_classes=num_classes, joint_spec=args.joint_spec_name)
+        else Model_STGCN(num_classes=num_classes, joint_spec=args.joint_spec_name, depth=args.model_depth)
     ).to(device)
+    print(f'Model: {"TwoStream_STGCN" if args.use_two_stream else "Model_STGCN"}  depth={args.model_depth}')
+
+    depth_suffix = f'_d{args.model_depth}' if args.model_depth != 10 else ''
 
     def save_periodic_checkpoint(epoch_no: int, model_obj: torch.nn.Module) -> None:
         apparatus_suffix = f'_expert_{args.apparatus}' if args.apparatus != 'all' else ''
         periodic_name = (
-            f'stgcn_gym99_coco18_2s{apparatus_suffix}_epoch{epoch_no}.pth'
+            f'stgcn_gym99_coco18_2s{depth_suffix}{apparatus_suffix}_epoch{epoch_no}.pth'
             if args.use_two_stream
-            else f'stgcn_gym99_coco18{apparatus_suffix}_epoch{epoch_no}.pth'
+            else f'stgcn_gym99_coco18{depth_suffix}{apparatus_suffix}_epoch{epoch_no}.pth'
         )
         periodic_path = os.path.join(args.out_dir, periodic_name)
         save_checkpoint(
@@ -386,6 +395,7 @@ def main():
             metadata={
                 'joint_spec_name': args.joint_spec_name,
                 'use_two_stream': bool(args.use_two_stream),
+                'model_depth': args.model_depth,
                 'dataset_format': 'gym99',
                 'num_classes': int(num_classes),
                 'apparatus': args.apparatus,
@@ -477,9 +487,9 @@ def main():
 
     apparatus_suffix = f'_expert_{args.apparatus}' if args.apparatus != 'all' else ''
     weights_name = (
-        f'stgcn_gym99_coco18_2s{apparatus_suffix}.pth'
+        f'stgcn_gym99_coco18_2s{depth_suffix}{apparatus_suffix}.pth'
         if args.use_two_stream
-        else f'stgcn_gym99_coco18{apparatus_suffix}.pth'
+        else f'stgcn_gym99_coco18{depth_suffix}{apparatus_suffix}.pth'
     )
     weights_path = os.path.join(args.out_dir, weights_name)
     save_checkpoint(
@@ -488,6 +498,7 @@ def main():
         metadata={
             'joint_spec_name': args.joint_spec_name,
             'use_two_stream': bool(args.use_two_stream),
+            'model_depth': args.model_depth,
             'dataset_format': 'gym99',
             'num_classes': int(num_classes),
             'apparatus': args.apparatus,

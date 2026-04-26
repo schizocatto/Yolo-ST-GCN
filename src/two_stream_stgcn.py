@@ -25,6 +25,7 @@ class TwoStream_STGCN(nn.Module):
         in_channels: int = 2,
         joint_spec: str = 'penn14',
         edge_importance: bool = True,
+        depth: int = 10,
     ):
         super().__init__()
         self.joint_stream = Model_STGCN(
@@ -32,12 +33,14 @@ class TwoStream_STGCN(nn.Module):
             in_channels=in_channels,
             joint_spec=joint_spec,
             edge_importance=edge_importance,
+            depth=depth,
         )
         self.bone_stream = Model_STGCN(
             num_classes=num_classes,
             in_channels=in_channels,
             joint_spec=joint_spec,
             edge_importance=edge_importance,
+            depth=depth,
         )
 
         # Learnable fusion gate in [0, 1] after sigmoid.
@@ -66,6 +69,7 @@ class TwoStream_STGCN_COCO18(nn.Module):
         num_classes: int,
         in_channels: int = 2,
         edge_importance: bool = True,
+        depth: int = 10,
     ):
         super().__init__()
         # Backward-compatible wrapper: use the unified Model_STGCN with coco18 graph.
@@ -74,12 +78,14 @@ class TwoStream_STGCN_COCO18(nn.Module):
             in_channels=in_channels,
             joint_spec='coco18',
             edge_importance=edge_importance,
+            depth=depth,
         )
         self.bone_stream = Model_STGCN(
             num_classes=num_classes,
             in_channels=in_channels,
             joint_spec='coco18',
             edge_importance=edge_importance,
+            depth=depth,
         )
 
         self.alpha_logit = nn.Parameter(torch.tensor(0.0))

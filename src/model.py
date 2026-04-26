@@ -10,6 +10,16 @@ import torch.nn.functional as F
 from src.config import IN_CHANNELS, NUM_CLASSES
 from src.graph import GraphSkeleton
 
+# Each entry is (out_channels, temporal_stride) for one block.
+# The first block always has residual=False; in_channels flows from the previous block.
+# All configs end at 256 output channels so the classifier head stays identical.
+_DEPTH_CONFIGS: dict[int, list[tuple[int, int]]] = {
+    10: [(64,1),(64,1),(64,1),(64,1),(128,2),(128,1),(128,1),(256,2),(256,1),(256,1)],
+    8:  [(64,1),(64,1),(64,1),(128,2),(128,1),(256,2),(256,1),(256,1)],
+    6:  [(64,1),(64,1),(128,2),(128,1),(256,2),(256,1)],
+    4:  [(64,1),(128,2),(256,2),(256,1)],
+}
+
 
 class STGCN_Block(nn.Module):
     """One ST-GCN block: graph conv + temporal conv + residual."""
@@ -79,30 +89,33 @@ class Model_STGCN(nn.Module):
         edge_importance: bool = True,
         block_dropout: float = 0.0,
         classifier_dropout: float = 0.3,
+        depth: int = 10,
     ):
+        if depth not in _DEPTH_CONFIGS:
+            raise ValueError(f'Unsupported depth {depth}. Choose from {sorted(_DEPTH_CONFIGS)}.')
         super().__init__()
         self.graph = GraphSkeleton(joint_spec=joint_spec)
         A = self.graph.A
 
         self.data_bn = nn.BatchNorm1d(in_channels * self.graph.num_node)
 
-        self.st_gcn_networks = nn.ModuleList([
-            STGCN_Block(in_channels, 64, A, residual=False, edge_importance=edge_importance, dropout_prob=block_dropout),
-            STGCN_Block(64, 64, A, edge_importance=edge_importance, dropout_prob=block_dropout),
-            STGCN_Block(64, 64, A, edge_importance=edge_importance, dropout_prob=block_dropout),
-            STGCN_Block(64, 64, A, edge_importance=edge_importance, dropout_prob=block_dropout),
-            STGCN_Block(64, 128, A, stride=2, edge_importance=edge_importance, dropout_prob=block_dropout),
-            STGCN_Block(128, 128, A, edge_importance=edge_importance, dropout_prob=block_dropout),
-            STGCN_Block(128, 128, A, edge_importance=edge_importance, dropout_prob=block_dropout),
-            STGCN_Block(128, 256, A, stride=2, edge_importance=edge_importance, dropout_prob=block_dropout),
-            STGCN_Block(256, 256, A, edge_importance=edge_importance, dropout_prob=block_dropout),
-            STGCN_Block(256, 256, A, edge_importance=edge_importance, dropout_prob=block_dropout),
-        ])
+        blocks = []
+        ch = in_channels
+        for i, (out_ch, stride) in enumerate(_DEPTH_CONFIGS[depth]):
+            blocks.append(STGCN_Block(
+                ch, out_ch, A,
+                stride=stride,
+                residual=(i > 0),
+                edge_importance=edge_importance,
+                dropout_prob=block_dropout,
+            ))
+            ch = out_ch
+        self.st_gcn_networks = nn.ModuleList(blocks)
 
         self.classifier_dropout = (
             nn.Dropout(p=classifier_dropout) if classifier_dropout > 0 else nn.Identity()
         )
-        self.fcn = nn.Conv2d(256, num_classes, kernel_size=1)
+        self.fcn = nn.Conv2d(ch, num_classes, kernel_size=1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         n, c, t, v, m = x.size()
