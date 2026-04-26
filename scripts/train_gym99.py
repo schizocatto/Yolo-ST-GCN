@@ -220,6 +220,31 @@ def main():
             raise RuntimeError(f'Apparatus filter "{args.apparatus}" produced empty split. Check dataset labels.')
     # ─────────────────────────────────────────────────────────────────────────
 
+    # ── Corrupt-sample filter (>5% zero keypoints) ───────────────────────────
+    def _zero_frac_mask(X, threshold=0.05):
+        xy = X[:, :, :, :, 0]                          # (N, 2, T, V)
+        is_zero = (xy[:, 0] == 0) & (xy[:, 1] == 0)   # (N, T, V)
+        return is_zero.mean(axis=(1, 2)) < threshold    # (N,) bool
+
+    tr_valid = _zero_frac_mask(X_train)
+    va_valid = _zero_frac_mask(X_val)
+    n_tr_before, n_va_before = len(X_train), len(X_val)
+    X_train, y_train = X_train[tr_valid], y_train[tr_valid]
+    X_val,   y_val   = X_val[va_valid],   y_val[va_valid]
+    if B_train is not None:
+        B_train = B_train[tr_valid]
+    if B_val is not None:
+        B_val = B_val[va_valid]
+    print(
+        f'[corrupt filter] train: {n_tr_before} → {len(X_train)} '
+        f'(removed {n_tr_before - len(X_train)})'
+    )
+    print(
+        f'[corrupt filter] val:   {n_va_before} → {len(X_val)} '
+        f'(removed {n_va_before - len(X_val)})'
+    )
+    # ─────────────────────────────────────────────────────────────────────────
+
     if args.max_train_samples > 0:
         n = min(args.max_train_samples, len(X_train))
         X_train, y_train = X_train[:n], y_train[:n]
