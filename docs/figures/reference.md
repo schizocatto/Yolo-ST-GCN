@@ -120,6 +120,36 @@ Tổng quan ý nghĩa từng biểu đồ được trích xuất từ hai notebo
 | `FX_ver2_confusion_matrix.png` | Confusion matrix trên tập val FX của mô hình Ver2: two-stream + bbox_norm + Focal Loss + aug 3×. **Acc = 68.64%, Macro F1 = 52.56%.** |
 | `FX_ver2_training_curves.png` | Đường cong huấn luyện Ver2 qua 70 epoch: (trái) Train/Val Loss; (phải) Train/Val Accuracy. |
 
+*(Notebook: `2stream-depthsearch.ipynb` — Two-Stream ST-GCN Depth Search, center_norm, Focal Loss, early stopping)*
+
+**Training config (Depth Search):**
+| Tham số | Giá trị |
+|---|---|
+| Model | Two-stream ST-GCN (`TwoStream_STGCN`), depths = [4, 6, 8] |
+| Joint spec | COCO18 (18 joints) |
+| Normalization | `center_norm` |
+| Epochs | 100 (với early stopping patience=10) |
+| Batch size | 64 |
+| LR | 0.001 |
+| Warmup | 5 epochs |
+| Loss | Focal Loss (`sqrt_inverse` α per class) |
+| Sampler | Weighted sampler |
+| Augmentation | Custom FX policy (flip, scale, rotate, joint drop, subsample) |
+| Grad clip | 1.0 |
+| Weight decay | 0.0005 |
+
+**Kết quả (val FX, 35 lớp):**
+| Depth | Best Val Acc | @Epoch | Final Val Acc | Final Train Acc | Gap (final) | Macro F1 |
+|-------|-------------|--------|--------------|----------------|-------------|---------|
+| 4 | 85.01% | 47 | 83.04% | 95.74% | +12.70% | 82.77% |
+| 6 | **89.68%** | 93 | **89.68%** | 99.49% | +9.81% | **87.19%** |
+| 8 | 87.76% | 66 | 87.57% | 97.01% | +9.43% | 84.59% |
+
+| Tên file | Ý nghĩa |
+|---|---|
+| `FX_depth_search_training_curves.png` | Bốn subplot (Train Loss, Val Loss, Train Acc, Val Acc) so sánh ba độ sâu (depth=4 xanh dương, depth=6 xanh lá, depth=8 cam) qua toàn bộ epochs. Depth=6 đạt val accuracy cao nhất và hội tụ ổn định nhất. |
+| `FX_depth_search_overfitting_gap.png` | Ba subplot song song (mỗi subplot = 1 depth): đường Train Acc (xanh dương) vs Val Acc (đỏ) với vùng bóng màu cam = overfitting gap. Đường đứt ngang = epoch tốt nhất. Depth=6 có gap nhỏ hơn depth=4 ở giai đoạn sau. |
+
 ---
 
 ## Tóm tắt so sánh
