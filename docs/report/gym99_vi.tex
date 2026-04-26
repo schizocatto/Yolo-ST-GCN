@@ -16,6 +16,8 @@
 \usepackage[vietnamese]{babel}
 \usepackage{tikz}
 \usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit, backgrounds}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
 
 \def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
     T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
@@ -766,6 +768,127 @@ Hình~\ref{fig:depth_curves} cho thấy cả ba độ sâu đều huấn luyện
 định nhờ dừng sớm và \texttt{center\_norm}, trái ngược hoàn toàn với
 sự phân kỳ của thực nghiệm kết hợp đầy đủ
 (Hình~\ref{fig:ver2_curves}).
+
+\subsection{Phân Tích Per-Class -- Mô Hình Tốt Nhất (Two-Stream, Depth=6)}
+\label{sec:perclass}
+
+Hình~\ref{fig:f1_perclass} trình bày F1-score từng lớp của mô hình
+Two-Stream ST-GCN depth=6 trên tập xác nhận FX gồm 2.181 mẫu (sau khi
+lọc mẫu hỏng), đạt accuracy tổng thể 89\%, macro-avg F1 = 0,87 và
+weighted-avg F1 = 0,89.
+
+\begin{figure*}[!t]
+  \centering
+  \begin{tikzpicture}
+  \begin{axis}[
+    ybar,
+    bar width=11pt,
+    width=\textwidth,
+    height=7cm,
+    xlabel={Chỉ số lớp},
+    ylabel={F1-score},
+    ymin=0.40, ymax=1.10,
+    xtick={0,1,...,34},
+    xticklabel style={font=\scriptsize, rotate=45, anchor=north east},
+    ymajorgrids=true,
+    grid style={dashed, gray!40},
+    title={F1-score từng lớp --- Two-Stream ST-GCN (depth=6, val set FX)},
+    title style={font=\small},
+    xlabel style={font=\small},
+    ylabel style={font=\small},
+    ytick={0.4,0.5,0.6,0.7,0.8,0.9,1.0},
+    yticklabel style={font=\small},
+    enlarge x limits=0.02,
+  ]
+  \addplot[fill=blue!50!white, draw=blue!70!black] coordinates {
+    (0,0.93) (1,0.86) (2,0.93) (3,0.85) (4,0.90) (5,0.81) (6,0.88) (7,0.51)
+    (8,0.90) (9,0.95) (10,0.92) (11,0.98) (12,1.00) (13,1.00) (14,0.91)
+    (15,0.96) (16,0.96) (17,0.92) (18,0.92) (19,0.97) (20,0.93) (21,0.58)
+    (22,0.78) (23,0.73) (24,0.89) (25,0.92) (26,0.86) (27,0.77) (28,0.86)
+    (29,0.89) (30,0.83) (31,0.83) (32,0.95) (33,0.69) (34,0.94)
+  };
+  \draw[red!80!black, dashed, line width=1.2pt]
+    (axis cs:-0.5,0.90) -- (axis cs:34.5,0.90);
+  \draw[orange!80!black, dashed, line width=1.2pt]
+    (axis cs:-0.5,0.80) -- (axis cs:34.5,0.80);
+  \node[anchor=west, font=\scriptsize, text=red!80!black]
+    at (axis cs:34.6,0.925) {0,90};
+  \node[anchor=west, font=\scriptsize, text=orange!80!black]
+    at (axis cs:34.6,0.825) {0,80};
+  \end{axis}
+  \end{tikzpicture}
+  \caption{F1-score từng lớp (0--34) của mô hình Two-Stream ST-GCN depth=6
+  trên tập xác nhận FX (2.181 mẫu, accuracy = 89\%, macro F1 = 0,87).
+  Đường đỏ nét đứt: ngưỡng F1 = 0,90; đường cam nét đứt: ngưỡng F1 = 0,80.
+  22/35 lớp vượt ngưỡng 0,90; lớp 7 (F1 = 0,51) và lớp 21 (F1 = 0,58)
+  là hai lớp kém nhất.}
+  \label{fig:f1_perclass}
+\end{figure*}
+
+\textbf{Các lớp dự đoán tốt (F1 $\geq$ 0,90).}
+22 trong số 35 lớp đạt F1 $\geq$ 0,90. Hai lớp đạt F1 = 1,00 hoàn hảo là
+lớp 12 (\textit{2-turn in tuck stand, free leg straight}) và lớp 13
+(\textit{3-turn on one leg, free leg below horizontal}): đây là hai kiểu
+xoay có tư thế cơ thể khác biệt rõ ràng -- tư thế thu (tuck) làm co đầu
+gối xuống thấp trong khi xoay 3 vòng trên một chân duy trì thân người
+thẳng đứng -- cấu hình khung xương đủ khác nhau để mô hình phân biệt
+hoàn toàn. Lớp 11 (\textit{2-turn, free leg held in 180° split position},
+F1 = 0,98) có tư thế chân tự do giữ tách 180° ngang suốt vòng xoay --
+một cấu hình đặc biệt nổi bật, dễ nhận ra. Lớp 19 (\textit{salto forward
+tucked}, F1 = 0,97, support = 57) là nhào lộn về trước tư thế thu gọn
+với quỹ đạo chuyển động rất đặc trưng, còn lớp 15 (\textit{1-turn on one
+leg}, F1 = 0,96) là xoay đứng đơn với số mẫu ổn định. Các lớp support
+lớn ($>$100 mẫu) hầu hết đều vượt ngưỡng 0,90: lớp 34 (\textit{double
+salto backward piked}, F1 = 0,94, support = 166), lớp 2 (\textit{split
+leap with 1 turn}, F1 = 0,93, support = 153), lớp 9 (\textit{switch leap
+to ring position}, F1 = 0,95, support = 143), lớp 0 (\textit{switch leap
+with 0.5 turn}, F1 = 0,93, support = 117).
+
+\textbf{Các lớp dự đoán tệ (F1 $<$ 0,80).}
+Sáu lớp có F1 dưới 0,80 gồm lớp 7 (F1 = 0,51), lớp 21 (F1 = 0,58),
+lớp 33 (F1 = 0,69), lớp 23 (F1 = 0,73), lớp 27 (F1 = 0,77), và lớp 22
+(F1 = 0,78). Điểm chung của bốn lớp 21, 22, 23, 27 là chúng đều thuộc
+họ nhào lộn thẳng (\textit{salto stretched}) \textit{chỉ khác nhau ở số
+vòng xoay dọc trục cơ thể}: lớp 21 (\textit{salto forward stretched,
+2 twists}), lớp 22 (\textit{1 twist}), lớp 23 (\textit{1.5 twists}),
+lớp 27 (\textit{salto backward stretched, 2 twists}). Từ chuỗi khung
+xương 2D trong 48 frame, tư thế cơ thể khi thực hiện nhào lộn thẳng
+gần như giống nhau bất kể số vòng xoay -- chỉ vận tốc góc quanh trục
+dọc là khác, thông tin này cực kỳ khó nắm bắt từ tọa độ $(x,y)$. Đây
+là giới hạn cốt lõi của biểu diễn khung xương 2D đối với nhóm động tác
+này. Lớp 7 (\textit{johnson with additional 0.5 turn}, precision = 1,00,
+recall = 0,35, support = 26) là nhảy Johnson thêm nửa vòng xoay, rất dễ
+nhầm với các lớp nhảy tương tự (lớp 0: \textit{switch leap 0.5 turn};
+lớp 1: \textit{switch leap 1 turn}); với chỉ 26 mẫu, mô hình bỏ sót tới
+65\% mẫu thực tế -- dù khi đã dự đoán thì precision đạt hoàn hảo. Lớp
+33 (\textit{double salto backward piked with 1 twist}, support = 24) bị
+nhầm lẫn với các thành viên trong nhóm nhào lộn kép về sau (lớp 32:
+không xoay; lớp 34: không xoay) -- cùng cơ chế nhầm do số vòng xoay
+trục dọc. Bảng~\ref{tab:perclass_summary} tóm tắt các lớp đại diện.
+
+\begin{table*}[!h]
+\caption{Năm lớp tốt nhất và năm lớp kém nhất theo F1-score
+         (Two-Stream ST-GCN depth=6, tập xác nhận FX)}
+\label{tab:perclass_summary}
+\centering
+\begin{tabular}{clcccc}
+\toprule
+Lớp & Mô tả động tác & Precision & Recall & F1 & Support \\
+\midrule
+12 & 2-turn in tuck stand, free leg straight      & 1,00 & 1,00 & \textbf{1,00} & 43 \\
+13 & 3-turn on one leg, free leg below horizontal & 1,00 & 1,00 & \textbf{1,00} & 21 \\
+11 & 2-turn, free leg held in 180° split position & 0,98 & 0,98 & \textbf{0,98} & 43 \\
+19 & salto forward tucked                         & 0,98 & 0,96 & \textbf{0,97} & 57 \\
+15 & 1-turn on one leg, free leg below horizontal & 0,93 & 1,00 & \textbf{0,96} & 51 \\
+\midrule
+27 & salto backward stretched with 2 twists       & 0,76 & 0,78 & 0,77 & 37 \\
+22 & salto forward stretched with 1 twist         & 0,73 & 0,84 & 0,78 & 80 \\
+23 & salto forward stretched with 1.5 twists      & 0,92 & 0,60 & 0,73 & 20 \\
+33 & double salto backward piked with 1 twist     & 0,68 & 0,71 & 0,69 & 24 \\
+7  & johnson with additional 0.5 turn             & 1,00 & 0,35 & \textbf{0,51} & 26 \\
+\bottomrule
+\end{tabular}
+\end{table*}
 
 \subsection{Tổng Kết và Phân Tích}
 \label{sec:summary}
