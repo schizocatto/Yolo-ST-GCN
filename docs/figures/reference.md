@@ -77,6 +77,51 @@ Tổng quan ý nghĩa từng biểu đồ được trích xuất từ hai notebo
 
 ---
 
+## Thư mục: `FX/FX-experiment-result/`
+*(Notebook: `Baseline-result.ipynb` — Single-stream ST-GCN, center_normalize, 80 epochs)*
+
+**Training config (Baseline):**
+| Tham số | Giá trị |
+|---|---|
+| Model | Single-stream ST-GCN (`Model_STGCN`) |
+| Normalization | `center_norm` (trừ tọa độ node trung tâm) |
+| Epochs | 80 |
+| Batch size | 128 |
+| LR | 0.001 |
+| Loss | CrossEntropy (mặc định) |
+| Sampler | Weighted sampler |
+| Augmentation | Enabled (default policy) |
+| Grad clip | 1.0 |
+
+| Tên file | Ý nghĩa |
+|---|---|
+| `FX_baseline_confusion_matrix.png` | Confusion matrix trên tập val FX (2411 mẫu, 35 lớp) của mô hình Baseline: single-stream ST-GCN + center_normalize. **Acc = 80.55%, Macro F1 = 79.70%.** |
+| `FX_baseline_training_curves.png` | Đường cong huấn luyện Baseline qua 80 epoch: (trái) Train/Val Loss; (phải) Train/Val Accuracy. |
+
+*(Notebook: `Ver2-result.ipynb` — Two-stream ST-GCN, bbox_normalize, Focal Loss, augmentation, 70 epochs)*
+
+**Training config (Ver2):**
+| Tham số | Giá trị |
+|---|---|
+| Model | Two-stream ST-GCN (`TwoStream_STGCN`, joint α=0.686 / bone α=0.314) |
+| Normalization | `bbox_norm` (chuẩn hóa theo bounding-box) |
+| Epochs | 70 |
+| Batch size | 32 |
+| LR | 0.001 |
+| Loss | Focal Loss (`sqrt_inverse` α per class) |
+| Warmup | 8 epochs |
+| Sampler | Weighted sampler + oversample 3× |
+| Augmentation | Custom FX policy (flip, scale, rotate ±10°, joint drop, subsample) |
+| Grad clip | 1.0 |
+| Weight decay | 0.0005 |
+
+| Tên file | Ý nghĩa |
+|---|---|
+| `FX_ver2_confusion_matrix.png` | Confusion matrix trên tập val FX của mô hình Ver2: two-stream + bbox_norm + Focal Loss + aug 3×. **Acc = 68.64%, Macro F1 = 52.56%.** |
+| `FX_ver2_training_curves.png` | Đường cong huấn luyện Ver2 qua 70 epoch: (trái) Train/Val Loss; (phải) Train/Val Accuracy. |
+
+---
+
 ## Tóm tắt so sánh
 
 | Metric | ST-GCN + GT Keypoints | YOLO + ST-GCN Pipeline |
