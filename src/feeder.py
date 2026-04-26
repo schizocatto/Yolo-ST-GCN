@@ -228,7 +228,7 @@ class SkeletonFeeder(Dataset):
         labels: np.ndarray,
         *,
         augment: bool = True,
-        bone_data: Optional[np.ndarray] = None,
+        bone_pairs: Optional[List[Tuple[int, int]]] = None,
         include_bone: bool = False,
         flip_pairs: Optional[List[Tuple[int, int]]] = None,
         window_size: int = -1,
@@ -244,22 +244,18 @@ class SkeletonFeeder(Dataset):
         self.labels = np.asarray(labels, dtype=np.int64)
         self.augment = augment
         self.include_bone = include_bone
+        self.bone_pairs = bone_pairs
         self.flip_pairs = flip_pairs if flip_pairs is not None else self.PENN14_FLIP_PAIRS
         self.window_size = window_size
         self.mixup_prob = mixup_prob if augment else 0.0
 
-        # Bone data
-        self.bone_data: Optional[np.ndarray] = None
-        if include_bone:
-            if bone_data is not None:
-                self.bone_data = np.asarray(bone_data, dtype=np.float32)
-            else:
-                warnings.warn(
-                    "SkeletonFeeder: include_bone=True but bone_data not provided. "
-                    "Bone stream will be None. Pass pre-computed bone_data for best performance.",
-                    UserWarning,
-                    stacklevel=2,
-                )
+        if include_bone and bone_pairs is None:
+            warnings.warn(
+                "SkeletonFeeder: include_bone=True but bone_pairs not provided. "
+                "Bone stream will output zeros.",
+                UserWarning,
+                stacklevel=2,
+            )
 
         # Build tier assignment
         self.tier_map: Dict[int, int] = {}
@@ -285,16 +281,20 @@ class SkeletonFeeder(Dataset):
     def __getitem__(self, idx: int):
         data_np = self.data[idx].copy()         # (C, T, V, M)
         label   = int(self.labels[idx])
-        bone_np = self.bone_data[idx].copy() if (self.include_bone and self.bone_data is not None) else None
 
         if self.augment:
-            data_np, bone_np = self._augment_sample(data_np, bone_np, label)
+            data_np = self._augment_sample(data_np, label)
 
         joint_t = torch.from_numpy(data_np)
         label_t = torch.tensor(label, dtype=torch.long)
 
         if self.include_bone:
-            bone_t = torch.from_numpy(bone_np) if bone_np is not None else torch.zeros_like(joint_t)
+            if self.bone_pairs is not None:
+                from src.skeleton_utils import calculate_bone_data
+                bone_np = calculate_bone_data(data_np, self.bone_pairs)
+                bone_t = torch.from_numpy(bone_np)
+            else:
+                bone_t = torch.zeros_like(joint_t)
             return (joint_t, bone_t), label_t
         return joint_t, label_t
 
@@ -305,9 +305,8 @@ class SkeletonFeeder(Dataset):
     def _augment_sample(
         self,
         data: np.ndarray,
-        bone: Optional[np.ndarray],
         label: int,
-    ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+    ) -> np.ndarray:
         tier = self.tier_map.get(label, 0)
         policy_kwargs = self.policy[tier]
 
@@ -317,9 +316,6 @@ class SkeletonFeeder(Dataset):
             if peer_idx is not None:
                 peer_data = self.data[peer_idx].copy()
                 data = skeleton_mixup(data, peer_data, alpha=0.3)
-                if bone is not None and self.bone_data is not None:
-                    peer_bone = self.bone_data[peer_idx].copy()
-                    bone = skeleton_mixup(bone, peer_bone, alpha=0.3)
 
         # Apply augmentation policy
         aug_kwargs = dict(
@@ -342,10 +338,8 @@ class SkeletonFeeder(Dataset):
         )
 
         data = apply_augmentation_policy(data, **aug_kwargs)
-        if bone is not None:
-            bone = apply_augmentation_policy(bone, **aug_kwargs)
 
-        return data, bone
+        return data
 
     def _sample_peer(self, label: int, exclude: Optional[int]) -> Optional[int]:
         """Sample a random index from the same class (for MixUp)."""
@@ -435,8 +429,7 @@ def build_feeder_pair(
     val_data:     np.ndarray,
     val_labels:   np.ndarray,
     *,
-    train_bone:   Optional[np.ndarray] = None,
-    val_bone:     Optional[np.ndarray] = None,
+    bone_pairs:   Optional[List[Tuple[int, int]]] = None,
     include_bone: bool = False,
     flip_pairs:   Optional[List[Tuple[int, int]]] = None,
     window_size:  int = -1,
@@ -453,7 +446,7 @@ def build_feeder_pair(
     -------
         train_ds, val_ds = build_feeder_pair(
             train_data, train_labels, val_data, val_labels,
-            include_bone=True, train_bone=train_bone, val_bone=val_bone,
+            include_bone=True, bone_pairs=COCO18_BONE_PAIRS,
             flip_pairs=SkeletonFeeder.PENN14_FLIP_PAIRS,
         )
         sampler  = make_weighted_sampler(train_ds)
@@ -464,7 +457,7 @@ def build_feeder_pair(
         data=train_data,
         labels=train_labels,
         augment=True,
-        bone_data=train_bone,
+        bone_pairs=bone_pairs,
         include_bone=include_bone,
         flip_pairs=flip_pairs,
         window_size=window_size,
@@ -476,7 +469,7 @@ def build_feeder_pair(
         data=val_data,
         labels=val_labels,
         augment=False,
-        bone_data=val_bone,
+        bone_pairs=bone_pairs,
         include_bone=include_bone,
         flip_pairs=flip_pairs,
         window_size=window_size,

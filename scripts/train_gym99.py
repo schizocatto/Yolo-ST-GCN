@@ -326,13 +326,15 @@ def main():
                 custom_policy = {int(k): v for k, v in raw_policy.items()}
             print(f'[info] Loaded custom augmentation policy from: {args.aug_config_path}')
 
+        from src.joint_specs import get_joint_spec
+        bone_pairs = get_joint_spec(args.joint_spec_name).bone_pairs
+
         train_ds, val_ds = build_feeder_pair(
             train_data=X_train,
             train_labels=y_train,
             val_data=X_val,
             val_labels=y_val,
-            train_bone=B_train,
-            val_bone=B_val,
+            bone_pairs=bone_pairs,
             include_bone=args.use_two_stream,
             flip_pairs=flip_pairs,
             custom_policy=custom_policy,
