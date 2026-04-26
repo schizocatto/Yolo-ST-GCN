@@ -77,6 +77,18 @@ Tổng quan ý nghĩa từng biểu đồ được trích xuất từ hai notebo
 
 ---
 
+## Thư mục: `FX/FX-experiment-result/`
+*(Notebooks: `Baseline-result.ipynb`, `Ver2-result.ipynb` — Kết quả huấn luyện Expert FX trên Gym99)*
+
+| Tên file | Ý nghĩa |
+|---|---|
+| `FX_baseline_confusion_matrix.png` | Confusion Matrix của **FX Baseline Expert** trên tập val FX. Hiển thị hiệu suất phân loại 35 lớp FX apparatus với keypoints GT. |
+| `FX_baseline_training_curves.png` | Đường cong huấn luyện (Train/Val Loss, Accuracy, F1) của **FX Baseline Expert** theo từng epoch, đọc từ `history.json`. |
+| `FX_ver2_confusion_matrix.png` | Confusion Matrix của **FX Ver2 Expert** trên tập val FX. So sánh với Baseline để đánh giá cải tiến của phiên bản 2. |
+| `FX_ver2_training_curves.png` | Đường cong huấn luyện của **FX Ver2 Expert** theo từng epoch, đọc từ `history.json`. |
+
+---
+
 ## Tóm tắt so sánh
 
 | Metric | ST-GCN + GT Keypoints | YOLO + ST-GCN Pipeline |

@@ -113,6 +113,10 @@ def parse_args():
                        'Labels are remapped to local indices [0, N-1]. '
                        'VT=0-5 (6 cls), FX=6-40 (35 cls), BB=41-73 (33 cls), UB=74-98 (25 cls), all=99 cls.'
                    ))
+    p.add_argument('--early_stopping_patience', type=int, default=0,
+                   help='Stop training if val_loss does not improve for N epochs. 0 = disabled.')
+    p.add_argument('--early_stopping_min_delta', type=float, default=1e-4,
+                   help='Minimum val_loss decrease to count as improvement for early stopping.')
     p.add_argument('--model_depth', type=int, default=10, choices=[4, 6, 8, 10],
                    help=(
                        'Number of ST-GCN blocks per stream. '
@@ -429,6 +433,8 @@ def main():
                 sgd_momentum=args.sgd_momentum,
                 sgd_nesterov=args.sgd_nesterov,
                 grad_clip_norm=args.grad_clip_norm,
+                early_stopping_patience=args.early_stopping_patience,
+                early_stopping_min_delta=args.early_stopping_min_delta,
             )
         else:
             print('[info] Preloading full train tensors to VRAM...')
@@ -461,6 +467,8 @@ def main():
                 sgd_momentum=args.sgd_momentum,
                 sgd_nesterov=args.sgd_nesterov,
                 grad_clip_norm=args.grad_clip_norm,
+                early_stopping_patience=args.early_stopping_patience,
+                early_stopping_min_delta=args.early_stopping_min_delta,
             )
     else:
         history = train_model(
@@ -483,6 +491,8 @@ def main():
             sgd_momentum=args.sgd_momentum,
             sgd_nesterov=args.sgd_nesterov,
             grad_clip_norm=args.grad_clip_norm,
+            early_stopping_patience=args.early_stopping_patience,
+            early_stopping_min_delta=args.early_stopping_min_delta,
         )
 
     apparatus_suffix = f'_expert_{args.apparatus}' if args.apparatus != 'all' else ''
